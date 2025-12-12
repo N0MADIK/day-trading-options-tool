@@ -16,6 +16,21 @@ from services.database import (
     init_db, get_all_tickers, get_scanner_tickers, add_ticker, remove_ticker,
     get_all_options, add_option, remove_option, is_option_in_watchlist
 )
+from services.strategies import (
+    create_strategy, get_all_strategies, get_strategy_by_id,
+    update_strategy, delete_strategy
+)
+from services.trades import (
+    create_trade, get_all_trades, get_trade_by_id,
+    update_trade, close_trade, delete_trade, get_trade_stats
+)
+from services.notifications import (
+    get_notifications, mark_notification_read, 
+    mark_all_read, clear_notifications, get_unread_count
+)
+from services.scheduler import (
+    init_scheduler, shutdown_scheduler, get_scheduler_status
+)
 
 app = FastAPI(
     title="Options Trading API",
@@ -35,9 +50,16 @@ app.add_middleware(
 
 @app.on_event("startup")
 async def startup_event():
-    """Initialize database on startup"""
+    """Initialize database and scheduler on startup"""
     init_db()
-    print("Database initialized")
+    init_scheduler()
+    print("Database and Scheduler initialized")
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Shutdown scheduler on exit"""
+    shutdown_scheduler()
 
 
 @app.get("/")
@@ -280,6 +302,223 @@ async def check_option_in_watchlist(contract_symbol: str):
         return {"inWatchlist": is_option_in_watchlist(contract_symbol)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+
+# ============== TRADE TRACKER ENDPOINTS ==============
+
+# --- Strategies ---
+
+@app.get("/api/strategies")
+async def list_strategies():
+    """Get all trading strategies"""
+    try:
+        return {"strategies": get_all_strategies()}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/strategies/{strategy_id}")
+async def get_strategy(strategy_id: int):
+    """Get single strategy"""
+    strategy = get_strategy_by_id(strategy_id)
+    if not strategy:
+        raise HTTPException(status_code=404, detail="Strategy not found")
+    return strategy
+
+
+class StrategyModel(BaseModel):
+    name: str
+    description: str = ""
+    scan_criteria: dict = {}
+    default_stop_loss_pct: float = 0.20
+    default_take_profit_pct: float = 0.50
+    notifications_enabled: bool = True
+
+
+@app.post("/api/strategies")
+async def create_strategy_endpoint(strategy: StrategyModel):
+    """Create a new strategy"""
+    result = create_strategy(
+        name=strategy.name,
+        description=strategy.description,
+        scan_criteria=strategy.scan_criteria,
+        default_stop_loss_pct=strategy.default_stop_loss_pct,
+        default_take_profit_pct=strategy.default_take_profit_pct,
+        notifications_enabled=strategy.notifications_enabled
+    )
+    if result["success"]:
+        return result
+    raise HTTPException(status_code=400, detail=result["error"])
+
+
+@app.put("/api/strategies/{strategy_id}")
+async def update_strategy_endpoint(strategy_id: int, strategy: StrategyModel):
+    """Update a strategy"""
+    result = update_strategy(
+        strategy_id,
+        name=strategy.name,
+        description=strategy.description,
+        scan_criteria=strategy.scan_criteria,
+        default_stop_loss_pct=strategy.default_stop_loss_pct,
+        default_take_profit_pct=strategy.default_take_profit_pct,
+        notifications_enabled=strategy.notifications_enabled
+    )
+    if result["success"]:
+        return result
+    raise HTTPException(status_code=400, detail=result.get("error", "Failed to update"))
+
+
+@app.delete("/api/strategies/{strategy_id}")
+async def delete_strategy_endpoint(strategy_id: int):
+    """Delete a strategy"""
+    result = delete_strategy(strategy_id)
+    if result["success"]:
+        return result
+    raise HTTPException(status_code=404, detail=result.get("error", "Failed to delete"))
+
+
+# --- Trades ---
+
+@app.get("/api/trades")
+async def list_trades(status: Optional[str] = None, strategy_id: Optional[int] = None):
+    """List trades with optional filters"""
+    try:
+        return {"trades": get_all_trades(status, strategy_id)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/trades/stats")
+async def trade_stats():
+    """Get aggregate trade statistics"""
+    try:
+        return get_trade_stats()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/trades/{trade_id}")
+async def get_trade(trade_id: int):
+    """Get single trade"""
+    trade = get_trade_by_id(trade_id)
+    if not trade:
+        raise HTTPException(status_code=404, detail="Trade not found")
+    return trade
+
+
+class TradeModel(BaseModel):
+    contract_symbol: str
+    ticker: str
+    entry_price: float
+    fill_price: float = None
+    quantity: int = 1
+    stop_loss: float = None
+    take_profit: float = None
+    strategy_id: int = None
+    notifications_enabled: bool = True
+    notes: str = ""
+
+
+@app.post("/api/trades")
+async def create_trade_endpoint(trade: TradeModel):
+    """Create a new trade"""
+    result = create_trade(
+        contract_symbol=trade.contract_symbol,
+        ticker=trade.ticker,
+        entry_price=trade.entry_price,
+        fill_price=trade.fill_price,
+        quantity=trade.quantity,
+        stop_loss=trade.stop_loss,
+        take_profit=trade.take_profit,
+        strategy_id=trade.strategy_id,
+        notifications_enabled=trade.notifications_enabled,
+        notes=trade.notes
+    )
+    if result["success"]:
+        return result
+    raise HTTPException(status_code=400, detail=result.get("error", "Failed to create trade"))
+
+
+class UpdateTradeModel(BaseModel):
+    stop_loss: float = None
+    take_profit: float = None
+    priority: str = None # Unused but often sent
+    notes: str = None
+    notifications_enabled: bool = None
+    quantity: int = None
+
+
+@app.put("/api/trades/{trade_id}")
+async def update_trade_endpoint(trade_id: int, updates: UpdateTradeModel):
+    """Update trade parameters"""
+    # Filter out None values
+    update_data = {k: v for k, v in updates.dict().items() if v is not None}
+    
+    result = update_trade(trade_id, **update_data)
+    if result["success"]:
+        return result
+    raise HTTPException(status_code=400, detail=result.get("error", "Failed to update trade"))
+
+
+class CloseTradeModel(BaseModel):
+    exit_price: float
+
+
+@app.post("/api/trades/{trade_id}/close")
+async def close_trade_endpoint(trade_id: int, data: CloseTradeModel):
+    """Close a trade manually"""
+    result = close_trade(trade_id, data.exit_price)
+    if result["success"]:
+        return result
+    raise HTTPException(status_code=400, detail=result.get("error", "Failed to close trade"))
+
+
+@app.delete("/api/trades/{trade_id}")
+async def delete_trade_endpoint(trade_id: int):
+    """Delete a trade record"""
+    result = delete_trade(trade_id)
+    if result["success"]:
+        return result
+    raise HTTPException(status_code=404, detail=result.get("error", "Failed to delete trade"))
+
+
+# --- Notifications & System ---
+
+@app.get("/api/notifications")
+async def list_notifications():
+    """Get notifications"""
+    return {
+        "notifications": get_notifications(), 
+        "unread_count": get_unread_count()
+    }
+
+
+@app.post("/api/notifications/{notification_id}/read")
+async def read_notification(notification_id: int):
+    """Mark notification as read"""
+    result = mark_notification_read(notification_id)
+    if result["success"]:
+        return result
+    raise HTTPException(status_code=404, detail="Notification not found")
+
+
+@app.post("/api/notifications/read-all")
+async def read_all_notifications():
+    """Mark all notifications as read"""
+    return mark_all_read()
+
+
+@app.delete("/api/notifications")
+async def clear_all_notifications():
+    """Clear all notifications"""
+    return clear_notifications()
+
+
+@app.get("/api/tracker/status")
+async def tracker_status():
+    """Get background scheduler status"""
+    return get_scheduler_status()
 
 
 if __name__ == "__main__":

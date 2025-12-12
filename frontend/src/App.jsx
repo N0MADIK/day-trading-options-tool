@@ -4,6 +4,8 @@ import ProfitEstimator from './components/ProfitEstimator'
 import StockChart from './components/StockChart'
 import AIAdvisor from './components/AIAdvisor'
 import DbPage from './components/DbPage'
+import TradeTracker from './components/TradeTracker'
+import TrackTradeModal from './components/TrackTradeModal'
 import FindOptionModal from './components/FindOptionModal'
 import { API_BASE } from './config'
 
@@ -12,6 +14,8 @@ const getInitialState = () => {
   const hash = window.location.hash.slice(1) // Remove #
   if (hash.startsWith('db')) {
     return { view: 'db', ticker: '', option: null }
+  } else if (hash.startsWith('tracker')) {
+    return { view: 'tracker', ticker: '', option: null }
   } else if (hash.startsWith('scan')) {
     return { view: 'scan', ticker: '', option: null }
   } else if (hash.startsWith('option/')) {
@@ -44,6 +48,8 @@ function App() {
   const [selectedOption, setSelectedOption] = useState(null)
   const [showAIAdvisor, setShowAIAdvisor] = useState(false)
   const [showDbPage, setShowDbPage] = useState(initialState.view === 'db')
+  const [showTradeTracker, setShowTradeTracker] = useState(initialState.view === 'tracker')
+  const [showTrackTrade, setShowTrackTrade] = useState(false)
   const [showFindOption, setShowFindOption] = useState(false)
   const [aiScope, setAiScope] = useState('both') // 'calls', 'puts', 'both'
 
@@ -134,6 +140,8 @@ function App() {
       window.history.replaceState(null, '', '#db')
     } else if (view === 'scan') {
       window.history.replaceState(null, '', '#scan')
+    } else if (view === 'tracker') {
+      window.history.replaceState(null, '', '#tracker')
     } else if (view === 'option' && tickerVal && contractSymbol) {
       window.history.replaceState(null, '', `#option/${tickerVal}/${contractSymbol}`)
     } else if (view === 'stock' && tickerVal) {
@@ -143,9 +151,21 @@ function App() {
     }
   }
 
+  const handleOpenTracker = () => {
+    setShowTradeTracker(true)
+    setShowDbPage(false)
+    setScanResults(null)
+    setQuote(null)
+    setOptions(null)
+    setTopVolume(null)
+    setSelectedOption(null)
+    updateURL('tracker')
+  }
+
   // Handle opening DB page
   const handleOpenDb = () => {
     setShowDbPage(true)
+    setShowTradeTracker(false)
     setScanResults(null)
     setQuote(null)
     setOptions(null)
@@ -443,11 +463,21 @@ function App() {
             className="scan-btn"
             onClick={() => {
               setShowDbPage(false)
+              setShowTradeTracker(false)
               handleScan()
             }}
             disabled={scanning}
           >
             {scanning ? 'scanning...' : 'scan market'}
+          </button>
+
+          {/* Tracker Tab Button */}
+          <button
+            className={`db-btn ${showTradeTracker ? 'active' : ''}`}
+            onClick={handleOpenTracker}
+            style={{ marginRight: '5px' }}
+          >
+            trades
           </button>
 
           {/* DB Tab Button */}
@@ -483,6 +513,16 @@ function App() {
           <p>Click <strong>scan market</strong> to find high volume options across top stocks</p>
           <p className="or-text">or search for a specific ticker</p>
         </div>
+      )}
+
+      {/* Trade Tracker Page */}
+      {showTradeTracker && (
+        <TradeTracker
+          onClose={() => {
+            setShowTradeTracker(false)
+            updateURL('home')
+          }}
+        />
       )}
 
       {/* Database Page */}
@@ -1022,6 +1062,19 @@ function App() {
           onNavigate={(ticker) => {
             setTicker(ticker)
             handleSearch(null, ticker)
+          }}
+          onTrackTrade={() => setShowTrackTrade(true)}
+        />
+      )}
+
+      {/* Track Trade Modal */}
+      {showTrackTrade && selectedOption && (
+        <TrackTradeModal
+          option={selectedOption}
+          onClose={() => setShowTrackTrade(false)}
+          onTradeCreated={() => {
+            setShowTrackTrade(false)
+            alert('Trade tracked successfully!')
           }}
         />
       )}

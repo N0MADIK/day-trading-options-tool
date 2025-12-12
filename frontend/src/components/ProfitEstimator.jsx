@@ -505,7 +505,7 @@ const EditableAxisLabel = ({ value, onSave }) => {
     )
 }
 
-function ProfitEstimator({ option, currentPrice, onClose, onNavigate }) {
+function ProfitEstimator({ option, currentPrice, onClose, onNavigate, onTrackTrade }) {
     const totalHours = ((option.daysToExpiry || 0) + 1) * TRADING_HOURS_PER_DAY
 
     // Calculate expiry date once for use throughout
@@ -1088,6 +1088,16 @@ function ProfitEstimator({ option, currentPrice, onClose, onNavigate }) {
                 >
                     {watchlistLoading ? '...' : inWatchlist ? '★ Saved' : '☆ Save'}
                 </button>
+                {onTrackTrade && (
+                    <button
+                        className="watchlist-btn"
+                        onClick={onTrackTrade}
+                        style={{ marginLeft: '10px', background: '#2196f3', border: 'none' }}
+                        title="Track this trade"
+                    >
+                        ⌖ Track
+                    </button>
+                )}
             </div>
 
             <div className="estimator-content">

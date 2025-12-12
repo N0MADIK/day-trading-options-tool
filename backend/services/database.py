@@ -138,6 +138,43 @@ def init_db():
             )
         ''')
         
+        # Create strategies table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS strategies (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT UNIQUE NOT NULL,
+                description TEXT,
+                scan_criteria TEXT,
+                default_stop_loss_pct REAL,
+                default_take_profit_pct REAL,
+                notifications_enabled BOOLEAN DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        
+        # Create trades table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS trades (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                strategy_id INTEGER,
+                contract_symbol TEXT NOT NULL,
+                ticker TEXT NOT NULL,
+                entry_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                entry_price REAL NOT NULL,
+                fill_price REAL,
+                quantity INTEGER DEFAULT 1,
+                stop_loss REAL,
+                take_profit REAL,
+                status TEXT DEFAULT 'OPEN',
+                exit_date TIMESTAMP,
+                exit_price REAL,
+                pnl REAL,
+                notifications_enabled BOOLEAN DEFAULT 1,
+                notes TEXT,
+                FOREIGN KEY(strategy_id) REFERENCES strategies(id)
+            )
+        ''')
+        
         conn.commit()
         
         # Seed with default tickers if table is empty
