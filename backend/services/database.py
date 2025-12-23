@@ -175,6 +175,35 @@ def init_db():
             )
         ''')
         
+        # Create custom_strategies table (Python Scripts)
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS custom_strategies (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT UNIQUE NOT NULL,
+                code TEXT,
+                schedule_type TEXT DEFAULT 'INTERVAL',
+                schedule_value TEXT DEFAULT '60',
+                execution_type TEXT DEFAULT 'HOST',
+                is_active BOOLEAN DEFAULT 0,
+                targets TEXT,
+                last_run TIMESTAMP,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+
+        # Create strategy_logs table (Execution History)
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS strategy_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                strategy_id INTEGER,
+                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                status TEXT,
+                output TEXT,
+                trades_generated INTEGER DEFAULT 0,
+                FOREIGN KEY(strategy_id) REFERENCES custom_strategies(id) ON DELETE CASCADE
+            )
+        ''')
+        
         conn.commit()
         
         # Seed with default tickers if table is empty

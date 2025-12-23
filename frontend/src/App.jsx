@@ -7,6 +7,8 @@ import DbPage from './components/DbPage'
 import TradeTracker from './components/TradeTracker'
 import TrackTradeModal from './components/TrackTradeModal'
 import FindOptionModal from './components/FindOptionModal'
+import CodeStrategyEditor from './components/CodeStrategyEditor'
+import PersonalFinanceOverview from './components/PersonalFinanceOverview'
 import { API_BASE } from './config'
 
 // Parse URL hash for routing
@@ -16,6 +18,8 @@ const getInitialState = () => {
     return { view: 'db', ticker: '', option: null }
   } else if (hash.startsWith('tracker')) {
     return { view: 'tracker', ticker: '', option: null }
+  } else if (hash.startsWith('finance')) {
+    return { view: 'finance', ticker: '', option: null }
   } else if (hash.startsWith('scan')) {
     return { view: 'scan', ticker: '', option: null }
   } else if (hash.startsWith('option/')) {
@@ -49,6 +53,8 @@ function App() {
   const [showAIAdvisor, setShowAIAdvisor] = useState(false)
   const [showDbPage, setShowDbPage] = useState(initialState.view === 'db')
   const [showTradeTracker, setShowTradeTracker] = useState(initialState.view === 'tracker')
+  const [showFinanceOverview, setShowFinanceOverview] = useState(initialState.view === 'finance')
+  const [showCodeEditor, setShowCodeEditor] = useState(false)
   const [showTrackTrade, setShowTrackTrade] = useState(false)
   const [showFindOption, setShowFindOption] = useState(false)
   const [aiScope, setAiScope] = useState('both') // 'calls', 'puts', 'both'
@@ -142,6 +148,8 @@ function App() {
       window.history.replaceState(null, '', '#scan')
     } else if (view === 'tracker') {
       window.history.replaceState(null, '', '#tracker')
+    } else if (view === 'finance') {
+      window.history.replaceState(null, '', '#finance')
     } else if (view === 'option' && tickerVal && contractSymbol) {
       window.history.replaceState(null, '', `#option/${tickerVal}/${contractSymbol}`)
     } else if (view === 'stock' && tickerVal) {
@@ -154,6 +162,7 @@ function App() {
   const handleOpenTracker = () => {
     setShowTradeTracker(true)
     setShowDbPage(false)
+    setShowFinanceOverview(false)
     setScanResults(null)
     setQuote(null)
     setOptions(null)
@@ -162,10 +171,24 @@ function App() {
     updateURL('tracker')
   }
 
+  // Handle opening Finance page
+  const handleOpenFinance = () => {
+    setShowFinanceOverview(true)
+    setShowTradeTracker(false)
+    setShowDbPage(false)
+    setScanResults(null)
+    setQuote(null)
+    setOptions(null)
+    setTopVolume(null)
+    setSelectedOption(null)
+    updateURL('finance')
+  }
+
   // Handle opening DB page
   const handleOpenDb = () => {
     setShowDbPage(true)
     setShowTradeTracker(false)
+    setShowFinanceOverview(false)
     setScanResults(null)
     setQuote(null)
     setOptions(null)
@@ -464,11 +487,20 @@ function App() {
             onClick={() => {
               setShowDbPage(false)
               setShowTradeTracker(false)
+              setShowFinanceOverview(false)
               handleScan()
             }}
             disabled={scanning}
           >
             {scanning ? 'scanning...' : 'scan market'}
+          </button>
+
+          {/* Finance Tab Button */}
+          <button
+            className={`finance-btn ${showFinanceOverview ? 'active' : ''}`}
+            onClick={handleOpenFinance}
+          >
+            finance
           </button>
 
           {/* Tracker Tab Button */}
@@ -507,12 +539,26 @@ function App() {
       {error && <div className="error">{error}</div>}
 
       {/* Empty State */}
-      {!quote && !topVolume && !scanResults && !loading && !scanning && !showDbPage && (
+      {!quote && !topVolume && !scanResults && !loading && !scanning && !showDbPage && !showTradeTracker && !showFinanceOverview && (
         <div className="empty-state">
           <h2>options scanner</h2>
           <p>Click <strong>scan market</strong> to find high volume options across top stocks</p>
           <p className="or-text">or search for a specific ticker</p>
         </div>
+      )}
+
+      {/* Personal Finance Overview Page */}
+      {showFinanceOverview && (
+        <PersonalFinanceOverview
+          onClose={() => {
+            setShowFinanceOverview(false)
+            updateURL('home')
+          }}
+          onNavigateToConnections={() => {
+            // Future: navigate to connections page
+            console.log('Navigate to connections')
+          }}
+        />
       )}
 
       {/* Trade Tracker Page */}
@@ -522,6 +568,14 @@ function App() {
             setShowTradeTracker(false)
             updateURL('home')
           }}
+          onOpenCodeEditor={() => setShowCodeEditor(true)}
+        />
+      )}
+
+      {/* Code Strategy Editor */}
+      {showCodeEditor && (
+        <CodeStrategyEditor
+          onClose={() => setShowCodeEditor(false)}
         />
       )}
 

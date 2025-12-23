@@ -191,7 +191,45 @@ def run_all_tests():
             'status': 'ERROR',
             'error': str(e)
         })
-    
+
+    # ===== test_custom_strategies.py =====
+    try:
+        import test_custom_strategies
+        
+        test_classes = [
+            test_custom_strategies.TestCustomStrategies,
+        ]
+        
+        results = run_test_module("test_custom_strategies.py", test_classes)
+        all_results.extend(results)
+        
+    except Exception as e:
+        print(f"  [ERROR] Failed to load test_custom_strategies.py: {e}")
+        all_results.append({
+            'name': 'test_custom_strategies.py (import)',
+            'status': 'ERROR',
+            'error': str(e)
+        })
+
+    # ===== test_custom_api_endpoints.py =====
+    try:
+        import test_custom_api_endpoints
+        
+        test_classes = [
+            test_custom_api_endpoints.TestCustomAPI,
+        ]
+        
+        results = run_test_module("test_custom_api_endpoints.py", test_classes)
+        all_results.extend(results)
+        
+    except Exception as e:
+        print(f"  [ERROR] Failed to load test_custom_api_endpoints.py: {e}")
+        all_results.append({
+            'name': 'test_custom_api_endpoints.py (import)',
+            'status': 'ERROR',
+            'error': str(e)
+        })
+
     # ===== Summary =====
     end_time = datetime.now()
     duration = (end_time - start_time).total_seconds()

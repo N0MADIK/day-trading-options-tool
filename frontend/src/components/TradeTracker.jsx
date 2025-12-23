@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { API_BASE } from '../config'
 import StrategyManager from './StrategyManager'
 
-function TradeTracker({ onClose }) {
+function TradeTracker({ onClose, onOpenCodeEditor }) {
     const [stats, setStats] = useState(null)
     const [trades, setTrades] = useState([])
     const [notifications, setNotifications] = useState([])
@@ -84,6 +84,9 @@ function TradeTracker({ onClose }) {
                 <div className="tracker-actions">
                     <button className="btn btn-secondary" onClick={() => setShowStrategies(true)}>
                         Strategies
+                    </button>
+                    <button className="btn btn-secondary" onClick={onOpenCodeEditor} style={{ marginLeft: '10px' }}>
+                        Python Scripts
                     </button>
                     <button className="close-btn" onClick={onClose}>
                         &times;

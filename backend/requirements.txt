@@ -8,3 +8,4 @@ python-dotenv
 google-generativeai
 apscheduler>=3.10.0
 httpx
+docker
