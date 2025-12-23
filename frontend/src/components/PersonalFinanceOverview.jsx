@@ -124,6 +124,84 @@ function PersonalFinanceOverview({ onClose, onNavigateToConnections }) {
         )
     }
 
+    // Mock Data for Preview
+    const MOCK_OVERVIEW_DATA = {
+        netWorthTotal: { value: 125430.50, currency: 'USD' },
+        asOf: new Date().toISOString(),
+        custodians: [
+            {
+                institutionId: 'inst_fidelity_01',
+                institutionName: 'Fidelity',
+                sourceType: 'FILE_IMPORT',
+                totalValue: { value: 85200.00, currency: 'USD' },
+                connection: {
+                    connectionId: 'conn_fidelity_01',
+                    status: 'ACTIVE',
+                    lastSyncedAt: new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString(), // 1 day ago
+                    lastErrorMessage: null
+                },
+                accounts: [
+                    {
+                        accountId: 'acc_fid_01',
+                        accountName: 'Individual Brokerage',
+                        accountType: 'BROKERAGE',
+                        accountSubtype: 'TAXABLE',
+                        value: { value: 45200.00, currency: 'USD' }
+                    },
+                    {
+                        accountId: 'acc_fid_02',
+                        accountName: 'Roth IRA',
+                        accountType: 'RETIREMENT',
+                        accountSubtype: 'ROTH_IRA',
+                        value: { value: 40000.00, currency: 'USD' }
+                    }
+                ]
+            },
+            {
+                institutionId: 'inst_robinhood_01',
+                institutionName: 'Robinhood Crypto',
+                sourceType: 'ROBINHOOD_CRYPTO',
+                totalValue: { value: 15230.50, currency: 'USD' },
+                connection: {
+                    connectionId: 'conn_rh_01',
+                    status: 'ACTIVE',
+                    lastSyncedAt: new Date(Date.now() - 1000 * 60 * 15).toISOString(), // 15 mins ago
+                    lastErrorMessage: null
+                },
+                accounts: [
+                    {
+                        accountId: 'acc_rh_crypto',
+                        accountName: 'Crypto Holdings',
+                        accountType: 'CRYPTO',
+                        accountSubtype: 'CRYPTO',
+                        value: { value: 15230.50, currency: 'USD' }
+                    }
+                ]
+            },
+            {
+                institutionId: 'inst_vanguard_01',
+                institutionName: 'Vanguard',
+                sourceType: 'FILE_IMPORT',
+                totalValue: { value: 25000.00, currency: 'USD' },
+                connection: {
+                    connectionId: 'conn_van_01',
+                    status: 'NEEDS_REAUTH',
+                    lastSyncedAt: new Date(Date.now() - 1000 * 60 * 60 * 24 * 7).toISOString(), // 7 days ago
+                    lastErrorMessage: 'Session expired'
+                },
+                accounts: [
+                    {
+                        accountId: 'acc_van_01',
+                        accountName: 'Traditional IRA',
+                        accountType: 'RETIREMENT',
+                        accountSubtype: 'TRAD_IRA',
+                        value: { value: 25000.00, currency: 'USD' }
+                    }
+                ]
+            }
+        ]
+    }
+
     // Error state
     if (error) {
         return (
@@ -136,7 +214,26 @@ function PersonalFinanceOverview({ onClose, onNavigateToConnections }) {
                     <div className="error-icon">⚠️</div>
                     <h3>Unable to load data</h3>
                     <p>{error}</p>
-                    <button className="retry-btn" onClick={fetchOverview}>Try Again</button>
+                    <div className="error-actions" style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
+                        <button className="retry-btn" onClick={fetchOverview}>Try Again</button>
+                        <button
+                            className="mock-btn"
+                            style={{
+                                padding: '8px 16px',
+                                background: '#2196F3',
+                                border: 'none',
+                                borderRadius: '4px',
+                                color: 'white',
+                                cursor: 'pointer'
+                            }}
+                            onClick={() => {
+                                setOverview(MOCK_OVERVIEW_DATA)
+                                setError(null)
+                            }}
+                        >
+                            Mock Preview
+                        </button>
+                    </div>
                 </div>
             </div>
         )

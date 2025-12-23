@@ -20,7 +20,7 @@ services:
     container_name: options-frontend
     restart: always
     ports:
-      - "8420:80"
+      - "5420:80"
 
 networks:
   default:

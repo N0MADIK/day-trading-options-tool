@@ -1,19 +1,34 @@
-FROM python:3.11-slim
+# Use uv base image with Python 3.11
+FROM ghcr.io/astral-sh/uv:python3.11-bookworm-slim
 
 WORKDIR /app
 
-# Install system dependencies for networking
+# Enable bytecode compilation
+ENV UV_COMPILE_BYTECODE=1
+# Copy from the cache instead of linking since it's a mounted volume
+ENV UV_LINK_MODE=copy
+
+# Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 # Install dependencies
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Copy lockfile and pyproject.toml
+COPY pyproject.toml uv.lock ./
+
+# Install dependencies using uv
+RUN uv sync --frozen --no-install-project --no-dev
 
 # Copy application code
 COPY . .
+
+# Install the project itself
+RUN uv sync --frozen --no-dev
+
+# Place executables on PATH
+ENV PATH="/app/.venv/bin:$PATH"
 
 # Expose the API port
 EXPOSE 8000
