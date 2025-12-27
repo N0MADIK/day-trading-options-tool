@@ -131,7 +131,7 @@ function PersonalFinanceOverview({ onClose, onNavigateToConnections }) {
         custodians: [
             {
                 institutionId: 'inst_fidelity_01',
-                institutionName: 'Fidelity',
+                institutionName: 'Fidelity (Preview)',
                 sourceType: 'FILE_IMPORT',
                 totalValue: { value: 85200.00, currency: 'USD' },
                 connection: {
@@ -159,7 +159,7 @@ function PersonalFinanceOverview({ onClose, onNavigateToConnections }) {
             },
             {
                 institutionId: 'inst_robinhood_01',
-                institutionName: 'Robinhood Crypto',
+                institutionName: 'Robinhood Crypto (Preview)',
                 sourceType: 'ROBINHOOD_CRYPTO',
                 totalValue: { value: 15230.50, currency: 'USD' },
                 connection: {
@@ -180,7 +180,7 @@ function PersonalFinanceOverview({ onClose, onNavigateToConnections }) {
             },
             {
                 institutionId: 'inst_vanguard_01',
-                institutionName: 'Vanguard',
+                institutionName: 'Vanguard (Preview)',
                 sourceType: 'FILE_IMPORT',
                 totalValue: { value: 25000.00, currency: 'USD' },
                 connection: {
