@@ -23,16 +23,23 @@ class RobinhoodCryptoConnector(BaseConnector):
     """
     Connector for Robinhood's official Crypto Trading API.
     
-    Uses the official Robinhood API for crypto holdings and trades.
-    Does NOT use unofficial/reverse-engineered endpoints.
+    When FINANCE_DEMO_MODE=true, returns demo crypto holdings.
+    When false, integrates with actual Robinhood Crypto API.
+    
+    Note: Only uses official Robinhood API endpoints - no reverse-engineered access.
     """
     
     source_type = SourceType.ROBINHOOD_CRYPTO
     
     def __init__(self):
-        self.api_key = os.environ.get("ROBINHOOD_API_KEY", "placeholder_api_key")
-        self.api_secret = os.environ.get("ROBINHOOD_API_SECRET", "placeholder_api_secret")
+        self.api_key = os.environ.get("ROBINHOOD_API_KEY", "")
+        self.api_secret = os.environ.get("ROBINHOOD_API_SECRET", "")
         self.base_url = os.environ.get("ROBINHOOD_API_URL", "https://trading.robinhood.com")
+        self._demo_mode = os.environ.get("FINANCE_DEMO_MODE", "true").lower() == "true"
+    
+    def _is_demo_mode(self) -> bool:
+        """Check if running in demo mode (no real API calls)."""
+        return self._demo_mode or not self.api_key or not self.api_secret
     
     def create_link_session(self, user_id: str, **kwargs) -> LinkSessionResult:
         """

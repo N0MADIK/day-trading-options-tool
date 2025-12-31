@@ -25,8 +25,10 @@ from .database import (
     upsert_security, get_security_by_symbol,
     upsert_holding, get_holdings_by_account, get_account_total_value,
     upsert_transaction, get_transactions_by_account,
-    record_raw_event, create_sync_job, update_sync_job, get_sync_jobs_by_connection
+    record_raw_event, create_sync_job, update_sync_job, get_sync_jobs_by_connection,
+    seed_demo_data, clear_demo_data
 )
+
 
 from .encryption import encrypt_auth_blob, decrypt_auth_blob, generate_new_key
 
@@ -55,6 +57,8 @@ __all__ = [
     "upsert_holding", "get_holdings_by_account", "get_account_total_value",
     "upsert_transaction", "get_transactions_by_account",
     "record_raw_event", "create_sync_job", "update_sync_job", "get_sync_jobs_by_connection",
+    "seed_demo_data", "clear_demo_data",
+
     # Encryption
     "encrypt_auth_blob", "decrypt_auth_blob", "generate_new_key",
     # Connectors

@@ -698,11 +698,13 @@ def get_finance_module():
 
 @app.on_event("startup")
 async def init_finance_database():
-    """Initialize finance database on startup"""
+    """Initialize finance database and seed demo data on startup"""
     try:
-        fm = get_finance_module()
-        fm["init_finance_db"]()
-        print("Finance database initialized")
+        from services.finance import init_finance_db, seed_demo_data
+        init_finance_db()
+        # Auto-seed demo data if no connections exist
+        seed_demo_data()
+        print("Finance database initialized with demo data")
     except Exception as e:
         print(f"Warning: Could not initialize finance database: {e}")
 
@@ -926,6 +928,31 @@ async def exchange_link_artifact(request: LinkExchangeRequest):
         }
     except HTTPException:
         raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/finance/demo/seed")
+async def seed_demo_data_endpoint():
+    """Seed demo data for the finance module"""
+    try:
+        from services.finance import seed_demo_data
+        result = seed_demo_data()
+        if result:
+            return {"success": True, "message": "Demo data seeded successfully"}
+        return {"success": True, "message": "Demo data already exists"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/finance/demo/reset")
+async def reset_demo_data_endpoint():
+    """Clear and reseed demo data"""
+    try:
+        from services.finance import clear_demo_data, seed_demo_data
+        clear_demo_data()
+        seed_demo_data()
+        return {"success": True, "message": "Demo data reset successfully"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

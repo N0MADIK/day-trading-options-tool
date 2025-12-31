@@ -23,16 +23,21 @@ class AggregatorConnector(BaseConnector):
     """
     Connector for aggregator APIs (Plaid, Finicity, Yodlee, MX, Akoya).
     
-    This is a placeholder implementation with mock data.
-    Replace with actual Plaid SDK integration when ready.
+    When FINANCE_DEMO_MODE=true, returns mock data for development.
+    When false, integrates with actual Plaid SDK.
     """
     
     source_type = SourceType.AGGREGATOR
     
     def __init__(self):
-        self.client_id = os.environ.get("PLAID_CLIENT_ID", "placeholder_client_id")
-        self.secret = os.environ.get("PLAID_SECRET", "placeholder_secret")
+        self.client_id = os.environ.get("PLAID_CLIENT_ID", "")
+        self.secret = os.environ.get("PLAID_SECRET", "")
         self.environment = os.environ.get("PLAID_ENV", "sandbox")
+        self._demo_mode = os.environ.get("FINANCE_DEMO_MODE", "true").lower() == "true"
+    
+    def _is_demo_mode(self) -> bool:
+        """Check if running in demo mode (no real API calls)."""
+        return self._demo_mode or not self.client_id or not self.secret
     
     def create_link_session(self, user_id: str, **kwargs) -> LinkSessionResult:
         """

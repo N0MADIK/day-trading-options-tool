@@ -893,3 +893,226 @@ def get_sync_jobs_by_connection(connection_id: int, limit: int = 10) -> List[Syn
         error_summary=row["error_summary"],
         attempt_count=row["attempt_count"]
     ) for row in rows]
+
+
+# ============================================================================
+# DEMO DATA SEEDING
+# ============================================================================
+
+def seed_demo_data():
+    """
+    Seed demo data for first-run experience.
+    Creates sample connections, accounts, holdings, and transactions.
+    Only runs if no connections exist.
+    """
+    from datetime import timedelta
+    from .encryption import encrypt_auth_blob
+    
+    # Check if already seeded
+    existing = get_all_connections()
+    if existing:
+        print("Demo data already exists, skipping seed")
+        return False
+    
+    conn = get_finance_db()
+    cursor = conn.cursor()
+    now = datetime.utcnow()
+    now_str = now.isoformat() + "Z"
+    today = now.strftime("%Y-%m-%d")
+    
+    # Get institution IDs
+    cursor.execute("SELECT id, brand_key FROM institutions")
+    institutions = {row["brand_key"]: row["id"] for row in cursor.fetchall()}
+    
+    # --- Create Connections ---
+    demo_connections = [
+        {
+            "institution": "fidelity",
+            "auth_data": {"institution": "fidelity", "account_name": "Fidelity Accounts"},
+        },
+        {
+            "institution": "vanguard", 
+            "auth_data": {"institution": "vanguard", "account_name": "Vanguard Accounts"},
+        },
+        {
+            "institution": "robinhood_crypto",
+            "auth_data": {"access_token": "demo_token", "refresh_token": "demo_refresh"},
+        },
+    ]
+    
+    connection_ids = {}
+    for dc in demo_connections:
+        inst_id = institutions.get(dc["institution"])
+        if not inst_id:
+            continue
+        
+        cursor.execute("SELECT source_type FROM institutions WHERE id = ?", (inst_id,))
+        source_type = cursor.fetchone()["source_type"]
+        
+        auth_encrypted = encrypt_auth_blob(json.dumps(dc["auth_data"]))
+        
+        cursor.execute("""
+            INSERT INTO connections 
+            (user_id, institution_id, source_type, status, auth_blob_encrypted, 
+             last_synced_at, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, ("default", inst_id, source_type, "ACTIVE", auth_encrypted, now_str, now_str, now_str))
+        
+        connection_ids[dc["institution"]] = cursor.lastrowid
+    
+    # --- Create Accounts ---
+    demo_accounts = [
+        # Fidelity
+        {"conn": "fidelity", "ext_id": "fidelity_roth", "name": "Roth IRA", 
+         "type": "RETIREMENT", "subtype": "ROTH_IRA"},
+        {"conn": "fidelity", "ext_id": "fidelity_brokerage", "name": "Individual Brokerage",
+         "type": "BROKERAGE", "subtype": "TAXABLE"},
+        # Vanguard
+        {"conn": "vanguard", "ext_id": "vanguard_401k", "name": "401(k)",
+         "type": "RETIREMENT", "subtype": "401K"},
+        {"conn": "vanguard", "ext_id": "vanguard_ira", "name": "Traditional IRA",
+         "type": "RETIREMENT", "subtype": "TRAD_IRA"},
+        # Robinhood
+        {"conn": "robinhood_crypto", "ext_id": "rh_crypto", "name": "Crypto Wallet",
+         "type": "CRYPTO", "subtype": "CRYPTO"},
+    ]
+    
+    account_ids = {}
+    for da in demo_accounts:
+        conn_id = connection_ids.get(da["conn"])
+        if not conn_id:
+            continue
+        
+        cursor.execute("""
+            INSERT INTO finance_accounts 
+            (connection_id, external_account_id, name, account_type, account_subtype, 
+             currency, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (conn_id, da["ext_id"], da["name"], da["type"], da["subtype"], "USD", now_str, now_str))
+        
+        account_ids[da["ext_id"]] = cursor.lastrowid
+    
+    # --- Create Securities ---
+    demo_securities = [
+        ("AAPL", "Apple Inc.", "EQUITY"),
+        ("VTI", "Vanguard Total Stock Market ETF", "ETF"),
+        ("VXUS", "Vanguard Total International Stock ETF", "ETF"),
+        ("BND", "Vanguard Total Bond Market ETF", "ETF"),
+        ("VTSAX", "Vanguard Total Stock Market Index Fund", "MUTUAL_FUND"),
+        ("VFIAX", "Vanguard 500 Index Fund Admiral", "MUTUAL_FUND"),
+        ("BTC", "Bitcoin", "CRYPTO"),
+        ("ETH", "Ethereum", "CRYPTO"),
+        ("SOL", "Solana", "CRYPTO"),
+    ]
+    
+    security_ids = {}
+    for symbol, name, sec_type in demo_securities:
+        cursor.execute("""
+            INSERT OR IGNORE INTO securities (symbol, name, security_type, created_at)
+            VALUES (?, ?, ?, ?)
+        """, (symbol, name, sec_type, now_str))
+        cursor.execute("SELECT id FROM securities WHERE symbol = ? AND security_type = ?", (symbol, sec_type))
+        security_ids[symbol] = cursor.fetchone()["id"]
+    
+    # --- Create Holdings ---
+    demo_holdings = [
+        # Fidelity Roth IRA
+        {"account": "fidelity_roth", "symbol": "VTI", "qty": 85.0, "price": 258.30, "cost": 195.00},
+        {"account": "fidelity_roth", "symbol": "VXUS", "qty": 120.0, "price": 62.45, "cost": 55.00},
+        {"account": "fidelity_roth", "symbol": "BND", "qty": 150.0, "price": 72.80, "cost": 75.00},
+        # Fidelity Brokerage
+        {"account": "fidelity_brokerage", "symbol": "AAPL", "qty": 50.0, "price": 195.50, "cost": 170.00},
+        {"account": "fidelity_brokerage", "symbol": "VTI", "qty": 65.0, "price": 258.30, "cost": 220.00},
+        # Vanguard 401k
+        {"account": "vanguard_401k", "symbol": "VTSAX", "qty": 450.0, "price": 135.25, "cost": 110.00},
+        {"account": "vanguard_401k", "symbol": "VFIAX", "qty": 200.0, "price": 475.80, "cost": 420.00},
+        # Vanguard IRA
+        {"account": "vanguard_ira", "symbol": "VTI", "qty": 100.0, "price": 258.30, "cost": 200.00},
+        {"account": "vanguard_ira", "symbol": "BND", "qty": 200.0, "price": 72.80, "cost": 74.00},
+        # Robinhood Crypto
+        {"account": "rh_crypto", "symbol": "BTC", "qty": 0.15, "price": 97500.00, "cost": 80000.00},
+        {"account": "rh_crypto", "symbol": "ETH", "qty": 2.5, "price": 3450.00, "cost": 3000.00},
+        {"account": "rh_crypto", "symbol": "SOL", "qty": 50.0, "price": 195.00, "cost": 100.00},
+    ]
+    
+    for dh in demo_holdings:
+        acct_id = account_ids.get(dh["account"])
+        sec_id = security_ids.get(dh["symbol"])
+        if not acct_id or not sec_id:
+            continue
+        
+        value = dh["qty"] * dh["price"]
+        cost_total = dh["qty"] * dh["cost"]
+        
+        cursor.execute("""
+            INSERT INTO holdings 
+            (account_id, security_id, quantity, cost_basis_total, cost_basis_per_unit,
+             price, value, as_of, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (acct_id, sec_id, dh["qty"], cost_total, dh["cost"], dh["price"], value, today, now_str))
+    
+    # --- Create Sample Transactions ---
+    demo_transactions = [
+        {"account": "fidelity_brokerage", "type": "BUY", "symbol": "AAPL", "qty": 10, 
+         "price": 195.50, "days_ago": 5, "desc": "Buy AAPL"},
+        {"account": "fidelity_brokerage", "type": "DIVIDEND", "symbol": "VTI", "qty": None,
+         "price": None, "days_ago": 15, "desc": "VTI Q4 Dividend", "amount": 125.50},
+        {"account": "fidelity_roth", "type": "BUY", "symbol": "VTI", "qty": 15,
+         "price": 255.00, "days_ago": 10, "desc": "Buy VTI"},
+        {"account": "vanguard_401k", "type": "DEPOSIT", "symbol": None, "qty": None,
+         "price": None, "days_ago": 1, "desc": "401k Contribution", "amount": 1500.00},
+        {"account": "rh_crypto", "type": "BUY", "symbol": "SOL", "qty": 10,
+         "price": 185.00, "days_ago": 7, "desc": "Buy SOL"},
+    ]
+    
+    for dt in demo_transactions:
+        acct_id = account_ids.get(dt["account"])
+        if not acct_id:
+            continue
+        
+        sec_id = security_ids.get(dt["symbol"]) if dt["symbol"] else None
+        posted_at = (now - timedelta(days=dt["days_ago"])).isoformat() + "Z"
+        trade_date = (now - timedelta(days=dt["days_ago"])).strftime("%Y-%m-%d")
+        
+        if dt.get("amount"):
+            amount = dt["amount"]
+        elif dt["qty"] and dt["price"]:
+            amount = -dt["qty"] * dt["price"] if dt["type"] == "BUY" else dt["qty"] * dt["price"]
+        else:
+            amount = 0
+        
+        dedupe_key = hashlib.sha256(f"{acct_id}|{posted_at}|{amount}|{dt['desc']}".encode()).hexdigest()[:32]
+        
+        cursor.execute("""
+            INSERT INTO finance_transactions 
+            (account_id, security_id, dedupe_key, transaction_type, trade_date,
+             posted_at, quantity, price, amount, description, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (acct_id, sec_id, dedupe_key, dt["type"], trade_date, posted_at,
+              dt["qty"], dt["price"], amount, dt["desc"], now_str))
+    
+    conn.commit()
+    conn.close()
+    
+    print(f"Demo data seeded: {len(connection_ids)} connections, {len(account_ids)} accounts")
+    return True
+
+
+def clear_demo_data():
+    """Clear all demo data for reset."""
+    conn = get_finance_db()
+    cursor = conn.cursor()
+    
+    # Delete in order to respect foreign keys
+    cursor.execute("DELETE FROM finance_transactions")
+    cursor.execute("DELETE FROM holdings")
+    cursor.execute("DELETE FROM finance_accounts")
+    cursor.execute("DELETE FROM raw_events")
+    cursor.execute("DELETE FROM sync_jobs")
+    cursor.execute("DELETE FROM connections")
+    # Don't delete institutions - they are defaults
+    
+    conn.commit()
+    conn.close()
+    print("Demo data cleared")
+    return True
