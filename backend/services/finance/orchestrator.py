@@ -24,14 +24,14 @@ from .database import (
 from .encryption import decrypt_auth_blob
 
 # Import and register connectors
-from .connector_aggregator import AggregatorConnector
+from .connector_snaptrade import SnapTradeConnector
 from .connector_robinhood import RobinhoodCryptoConnector
 from .connector_file_import import FileImportConnector
 
 
 def register_connectors():
     """Register all available connectors."""
-    ConnectorRegistry.register(AggregatorConnector())
+    ConnectorRegistry.register(SnapTradeConnector())
     ConnectorRegistry.register(RobinhoodCryptoConnector())
     ConnectorRegistry.register(FileImportConnector())
 

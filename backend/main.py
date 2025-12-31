@@ -763,7 +763,7 @@ async def create_finance_connection(request: CreateConnectionRequest):
                 registry = fm["ConnectorRegistry"]()
                 connector = registry.get_connector(fm["SourceType"].AGGREGATOR)
                 # user_id is 'default' for now
-                exchange_result = connector.exchange_link_artifact("default", request.auth_data)
+                exchange_result = connector.exchange_link_artifact("test2", request.auth_data)
                 
                 if not exchange_result.success:
                      raise HTTPException(status_code=400, detail=f"Token exchange failed: {exchange_result.error}")
@@ -806,6 +806,94 @@ async def create_finance_connection(request: CreateConnectionRequest):
             "status": "created" if created else "updated",
             "institution": institution.to_dict()
         }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/finance/snaptrade/link")
+async def snaptrade_link():
+    """Generate a SnapTrade connection portal link."""
+    try:
+        fm = get_finance_module()
+        import json
+        
+        # 1. Ensure SnapTrade Institution exists
+        inst = fm["get_institution_by_brand_key"]("snaptrade")
+        if not inst:
+            raise HTTPException(status_code=404, detail="SnapTrade institution not found")
+        
+        # 2. Get Connector
+        registry = fm["ConnectorRegistry"]
+        connector = registry.get(fm["SourceType"].SNAPTRADE)
+        if not connector:
+            raise HTTPException(status_code=500, detail="SnapTrade connector not registered")
+        
+        # 3. Create Link Session (Register/Login user)
+        # We use "default" as the internal user ID for now
+        result = connector.create_link_session("test2")
+        
+        if not result.success:
+            raise HTTPException(status_code=400, detail=f"Failed to generate link: {result.error}")
+            
+        # 4. Upsert Connection Record with User Secret
+        # We need to store the user_secret so we can sync later. 
+        # result.link_token contains the user_secret in our implementation
+        if result.link_token:
+            auth_data = {
+                "user_id": "test2",
+                "user_secret": result.link_token
+            }
+            auth_encrypted = fm["encrypt_auth_blob"](json.dumps(auth_data))
+            
+            # Check for existing connection
+            conns = fm["get_all_connections"]()
+            existing = next((c for c in conns if c.institution_id == inst.id), None)
+            
+            if existing:
+                fm["update_connection_auth"](existing.id, auth_encrypted)
+            else:
+                 fm["create_connection"](
+                    institution_id=inst.id,
+                    source_type=inst.source_type,
+                    auth_blob_encrypted=auth_encrypted
+                )
+        
+        return {"link_url": result.link_url}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"SnapTrade Link Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/finance/snaptrade/sync")
+async def snaptrade_sync():
+    """Trigger sync for SnapTrade connection."""
+    try:
+        fm = get_finance_module()
+        
+        # Find SnapTrade Connection
+        inst = fm["get_institution_by_brand_key"]("snaptrade")
+        if not inst:
+             raise HTTPException(status_code=404, detail="SnapTrade institution not found")
+             
+        conns = fm["get_all_connections"]()
+        connection = next((c for c in conns if c.institution_id == inst.id), None)
+        
+        if not connection:
+             raise HTTPException(status_code=404, detail="SnapTrade connection not found. Please connect first.")
+             
+        # Trigger Sync
+        result = fm["sync_connection"](connection.id, fm["SyncMode"].INCREMENTAL, "USER_REFRESH")
+        
+        if result["success"]:
+            return result
+        else:
+             raise HTTPException(status_code=500, detail=result.get("error", "Sync failed"))
+             
     except HTTPException:
         raise
     except Exception as e:
@@ -901,7 +989,7 @@ async def start_link_session(request: LinkStartRequest):
         if not connector:
             raise HTTPException(status_code=400, detail="No connector available for this institution")
         
-        result = connector.create_link_session("default", institution=request.institution_brand_key)
+        result = connector.create_link_session("test2", institution=request.institution_brand_key)
         
         if result.success:
             return {
@@ -941,7 +1029,7 @@ async def exchange_link_artifact(request: LinkExchangeRequest):
             raise HTTPException(status_code=400, detail="No connector available")
         
         # Exchange artifact
-        result = connector.exchange_link_artifact("default", request.artifact)
+        result = connector.exchange_link_artifact("test2", request.artifact)
         
         if not result.success:
             raise HTTPException(status_code=400, detail=result.error)

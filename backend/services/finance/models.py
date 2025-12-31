@@ -17,7 +17,8 @@ from dataclasses import dataclass, field, asdict
 # ============================================================================
 
 class SourceType(str, Enum):
-    AGGREGATOR = "AGGREGATOR"
+    AGGREGATOR = "AGGREGATOR"  # Deprecated (Plaid)
+    SNAPTRADE = "SNAPTRADE"
     ROBINHOOD_CRYPTO = "ROBINHOOD_CRYPTO"
     FILE_IMPORT = "FILE_IMPORT"
 

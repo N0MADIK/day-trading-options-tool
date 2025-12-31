@@ -179,9 +179,9 @@ def init_finance_db():
     default_institutions = [
         ("Fidelity", "fidelity", SourceType.FILE_IMPORT.value),
         ("Vanguard", "vanguard", SourceType.FILE_IMPORT.value),
-        ("Charles Schwab", "schwab", SourceType.AGGREGATOR.value),
+        ("Charles Schwab", "schwab", SourceType.SNAPTRADE.value),
         ("Robinhood (Crypto)", "robinhood_crypto", SourceType.ROBINHOOD_CRYPTO.value),
-        ("Plaid Connection", "plaid", SourceType.AGGREGATOR.value),
+        ("SnapTrade Connection", "snaptrade", SourceType.SNAPTRADE.value),
     ]
     
     for name, brand_key, source_type in default_institutions:
