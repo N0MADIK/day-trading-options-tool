@@ -1,7 +1,7 @@
 """
 FastAPI backend for Options Trading Dashboard
 """
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from typing import Optional
 from pydantic import BaseModel
@@ -671,8 +671,9 @@ def get_finance_module():
     from services.finance import (
         init_finance_db, get_all_institutions, get_institution_by_brand_key,
         create_connection, get_all_connections as get_db_connections, get_connection_by_id,
+        update_connection_status, update_connection_auth,
         get_accounts_by_connection, get_holdings_by_account, get_transactions_by_account,
-        get_account_total_value, encrypt_auth_blob, SourceType, SyncMode,
+        get_account_total_value, encrypt_auth_blob, SourceType, SyncMode, ConnectionStatus,
         sync_connection as do_sync, process_file_upload,
         ConnectorRegistry
     )
@@ -683,6 +684,8 @@ def get_finance_module():
         "create_connection": create_connection,
         "get_all_connections": get_db_connections,
         "get_connection_by_id": get_connection_by_id,
+        "update_connection_status": update_connection_status,
+        "update_connection_auth": update_connection_auth,
         "get_accounts_by_connection": get_accounts_by_connection,
         "get_holdings_by_account": get_holdings_by_account,
         "get_transactions_by_account": get_transactions_by_account,
@@ -690,6 +693,7 @@ def get_finance_module():
         "encrypt_auth_blob": encrypt_auth_blob,
         "SourceType": SourceType,
         "SyncMode": SyncMode,
+        "ConnectionStatus": ConnectionStatus,
         "sync_connection": do_sync,
         "process_file_upload": process_file_upload,
         "ConnectorRegistry": ConnectorRegistry
@@ -751,22 +755,55 @@ async def create_finance_connection(request: CreateConnectionRequest):
         if not institution:
             raise HTTPException(status_code=404, detail=f"Institution not found: {request.institution_brand_key}")
         
+        # Handle specific connector setup (like Plaid token exchange)
+        final_auth_data = request.auth_data
+        
+        if institution.source_type == fm["SourceType"].AGGREGATOR.value and request.auth_data and "public_token" in request.auth_data:
+            try:
+                registry = fm["ConnectorRegistry"]()
+                connector = registry.get_connector(fm["SourceType"].AGGREGATOR)
+                # user_id is 'default' for now
+                exchange_result = connector.exchange_link_artifact("default", request.auth_data)
+                
+                if not exchange_result.success:
+                     raise HTTPException(status_code=400, detail=f"Token exchange failed: {exchange_result.error}")
+                     
+                final_auth_data = exchange_result.auth_data
+            except Exception as e:
+                print(f"Token exchange error: {e}")
+                # Fallback to saving raw data if exchange fails (might be useful for debugging)
+                pass
+
         # Encrypt auth data if provided
         auth_encrypted = None
-        if request.auth_data:
+        if final_auth_data:
             import json
-            auth_encrypted = fm["encrypt_auth_blob"](json.dumps(request.auth_data))
+            auth_encrypted = fm["encrypt_auth_blob"](json.dumps(final_auth_data))
         
-        # Create connection
-        connection_id = fm["create_connection"](
-            institution_id=institution.id,
-            source_type=institution.source_type,
-            auth_blob_encrypted=auth_encrypted
-        )
+        # Check if connection already exists for this institution
+        existing_connections = fm["get_all_connections"]()
+        existing = next((c for c in existing_connections if c.institution_id == institution.id), None)
+        
+        if existing:
+            # Update existing connection
+            if auth_encrypted:
+                fm["update_connection_auth"](existing.id, auth_encrypted)
+            fm["update_connection_status"](existing.id, fm["ConnectionStatus"].ACTIVE)
+            connection_id = existing.id
+            created = False
+        else:
+            # Create new connection
+            connection_id = fm["create_connection"](
+                institution_id=institution.id,
+                source_type=institution.source_type,
+                auth_blob_encrypted=auth_encrypted
+            )
+            created = True
         
         return {
-            "success": True,
+            "success": True, 
             "connection_id": connection_id,
+            "status": "created" if created else "updated",
             "institution": institution.to_dict()
         }
     except HTTPException:
@@ -953,6 +990,40 @@ async def reset_demo_data_endpoint():
         clear_demo_data()
         seed_demo_data()
         return {"success": True, "message": "Demo data reset successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/finance/connections/{connection_id}/upload")
+async def upload_finance_file(connection_id: int, file: UploadFile = File(...)):
+    """Upload and process a finance file (OFX/QFX/CSV)"""
+    try:
+        import os
+        from pathlib import Path
+        import shutil
+        
+        # Save uploaded file
+        upload_dir = Path(__file__).parent / "data" / "uploads"
+        upload_dir.mkdir(parents=True, exist_ok=True)
+        
+        file_path = upload_dir / file.filename
+        with file_path.open("wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+            
+        # Determine file type
+        filename_lower = file.filename.lower()
+        file_type = "unknown"
+        if filename_lower.endswith(".ofx") or filename_lower.endswith(".qfx"):
+            file_type = "ofx"
+        elif filename_lower.endswith(".csv"):
+            file_type = "csv"
+            
+        # Process file
+        fm = get_finance_module()
+        result = fm["process_file_upload"](connection_id, str(file_path), file_type)
+        
+        return result
+        
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

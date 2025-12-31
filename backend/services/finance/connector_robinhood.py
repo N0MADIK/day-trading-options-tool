@@ -33,13 +33,13 @@ class RobinhoodCryptoConnector(BaseConnector):
     
     def __init__(self):
         self.api_key = os.environ.get("ROBINHOOD_API_KEY", "")
-        self.api_secret = os.environ.get("ROBINHOOD_API_SECRET", "")
+        self.private_key = os.environ.get("ROBINHOOD_PRIVATE_KEY", "")
         self.base_url = os.environ.get("ROBINHOOD_API_URL", "https://trading.robinhood.com")
         self._demo_mode = os.environ.get("FINANCE_DEMO_MODE", "true").lower() == "true"
     
     def _is_demo_mode(self) -> bool:
         """Check if running in demo mode (no real API calls)."""
-        return self._demo_mode or not self.api_key or not self.api_secret
+        return self._demo_mode or not self.api_key or not self.private_key
     
     def create_link_session(self, user_id: str, **kwargs) -> LinkSessionResult:
         """
