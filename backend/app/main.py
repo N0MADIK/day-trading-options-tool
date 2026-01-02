@@ -1,6 +1,3 @@
-"""
-FastAPI backend for Options Trading Dashboard - New Architecture
-"""
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -84,20 +81,10 @@ async def root():
     }
 
 
-@app.get("/api/v1/health")
-async def health_check():
-    """Health check endpoint"""
-    return {
-        "status": "healthy",
-        "version": settings.app_version,
-        "architecture": "clean"
-    }
-
-
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(
-        "main_new:app",
+        "app.main:app",
         host="0.0.0.0",
         port=8000,
         reload=settings.debug
