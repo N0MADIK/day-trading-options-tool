@@ -4,7 +4,9 @@ __pycache__/
 *.so
 venv/
 .venv/
-
+backend/.env
+backend\.env
+.env
 # Node  
 node_modules/
 dist/
