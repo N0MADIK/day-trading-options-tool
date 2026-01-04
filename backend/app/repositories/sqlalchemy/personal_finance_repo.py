@@ -27,7 +27,7 @@ from app.schemas.personal_finance import (
     AccountType, AccountSubtype, SecurityType,
     TransactionType, SyncMode, SyncStatus
 )
-from app.domain.models import (
+from app.models.personal_finance import (
     Institution, Connection, Account, Security, Holding,
     Transaction, SyncJob
 )

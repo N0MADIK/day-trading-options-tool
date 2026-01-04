@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
 from typing import List, Optional
+from datetime import datetime
 import json
 
 from app.services.personal_finance_service import PersonalFinanceService, PersonalFinanceIntegrationService
@@ -710,7 +711,7 @@ async def search_transactions(
 @import_router.post("/upload", response_model=dict)
 async def upload_file(
     file: UploadFile = File(..., description="File to import"),
-    file_type: str = Query(..., regex="^(csv|ofx|qfx)$", description="File type"),
+    file_type: str = Query(..., pattern="^(csv|ofx|qfx)$", description="File type"),
     account_id: Optional[int] = Query(None, description="Target account ID"),
     connection_id: Optional[int] = Query(None, description="Target connection ID"),
     mapping: Optional[str] = Query(None, description="Field mapping configuration"),

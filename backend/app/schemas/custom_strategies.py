@@ -288,7 +288,7 @@ class StrategySignalCreateRequest(BaseModel):
     strategy_id: int = Field(..., description="Strategy ID")
     symbol: str = Field(..., min_length=1, max_length=20, description="Symbol")
     signal_type: str = Field(..., min_length=1, max_length=50, description="Signal type")
-    action: str = Field(..., regex="^(BUY|SELL|HOLD)$", description="Action (BUY/SELL/HOLD)")
+    action: str = Field(..., pattern="^(BUY|SELL|HOLD)$", description="Action (BUY/SELL/HOLD)")
     confidence: float = Field(..., ge=0.0, le=1.0, description="Confidence level")
     price: Optional[float] = Field(None, description="Signal price")
     target_price: Optional[float] = Field(None, description="Target price")
@@ -349,7 +349,7 @@ class StrategySignalListRequest(BaseModel):
     strategy_id: Optional[int] = Field(None, description="Filter by strategy ID")
     symbol: Optional[str] = Field(None, min_length=1, max_length=20, description="Filter by symbol")
     signal_type: Optional[str] = Field(None, description="Filter by signal type")
-    action: Optional[str] = Field(None, regex="^(BUY|SELL|HOLD)$", description="Filter by action")
+    action: Optional[str] = Field(None, pattern="^(BUY|SELL|HOLD)$", description="Filter by action")
     is_executed: Optional[bool] = Field(None, description="Filter by execution status")
     start_time: Optional[datetime] = Field(None, description="Filter by start time")
     end_time: Optional[datetime] = Field(None, description="Filter by end time")
@@ -374,7 +374,7 @@ class StrategyTemplateListRequest(BaseModel):
 class StrategyBatchRequest(BaseModel):
     """Request for batch strategy operations"""
     strategy_ids: List[int] = Field(..., min_items=1, max_items=100, description="List of strategy IDs")
-    action: str = Field(..., regex="^(activate|deactivate|delete|run)$", description="Batch action")
+    action: str = Field(..., pattern="^(activate|deactivate|delete|run)$", description="Batch action")
     parameters: Optional[Dict[str, Any]] = Field(None, description="Parameters for run action")
 
 

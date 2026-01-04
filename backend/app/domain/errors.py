@@ -38,8 +38,7 @@ class ForbiddenError(BaseDomainError):
 class ExternalServiceError(BaseDomainError):
     """External service error"""
     
-    def __init__(self, message: str, service_name: str, details: Optional[Dict[str, Any]] = None):
-        self.service_name = service_name
+    def __init__(self, message: str, details: Optional[Dict[str, Any]] = None):
         super().__init__(message, details)
 
 

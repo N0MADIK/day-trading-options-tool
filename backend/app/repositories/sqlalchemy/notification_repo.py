@@ -17,7 +17,8 @@ from app.schemas.notifications import (
     NotificationBatchRequest, NotificationSendRequest,
     NotificationSettingsRequest, NotificationDigestRequest
 )
-from app.domain.models import Notification, NotificationTemplate, NotificationSettings, NotificationDigest
+from app.models.notification import Notification, NotificationTemplate, NotificationDigest
+from app.models.notification_settings import NotificationSettings
 from app.domain.errors import NotFoundError, ConflictError, ValidationError
 
 

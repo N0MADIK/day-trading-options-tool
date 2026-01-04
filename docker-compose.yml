@@ -15,12 +15,29 @@ services:
       - path: ./backend/.env
         required: false
 
+  # Original day-trading frontend
   frontend:
     build: ./frontend
     container_name: options-frontend
     restart: always
     ports:
       - "5420:80"
+    depends_on:
+      - backend
+
+  # Finance-flow frontend (integrated dashboard)
+  finance-flow:
+    build:
+      context: ../finance-flow
+      args:
+        VITE_API_URL: http://localhost:8000
+        VITE_WS_URL: ws://localhost:8000
+    container_name: finance-flow-frontend
+    restart: always
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
 
 networks:
   default:

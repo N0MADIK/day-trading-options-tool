@@ -1,123 +1,260 @@
-# Options Scanner Pro
+# Options Scanner Pro + Finance Flow
 
-> Advanced Options Scanner with AI-Powered Trade Recommendations, Interactive Charts & Real-Time Greeks
-
-Scan 100+ stocks, get AI trade recommendations, analyze with interactive candlestick charts, and estimate profits with Black-Scholes pricing.
+> Advanced Options Scanner with AI-Powered Trade Recommendations, Interactive Charts, Real-Time Greeks, and Personal Finance Dashboard
 
 ![Options Scanner](https://img.shields.io/badge/Options-Scanner-00d26a) ![AI Powered](https://img.shields.io/badge/AI-Gemini-4a9eff) ![React](https://img.shields.io/badge/React-18-61dafb) ![Python](https://img.shields.io/badge/Python-FastAPI-3776ab)
 
-## Features
+---
 
-### 🧠 AI Trade Advisor (New v2)
-- **Deep Analysis**: Analyzes technicals across **5 timeframes** (1m, 5m, 1h, 1d, 1wk) to spot trend alignment.
-- **Actionable Plans**: Provides specific **Entry**, **Stop Loss**, and **Take Profit** targets for every trade.
-- **Smart Strike Selection**: Automatically targets **ATM/Near-OTM** options (Delta 0.15-0.85) for optimal leverage, avoiding low-ROI deep ITM calls.
-- **Scope Control**: Analyze Calls, Puts, or Both with a single click.
+## 🏗️ Architecture Overview
 
-> **Customizing the AI Strategy**:
-> You can tweak the AI's personality and risk tolerance by editing the prompt in `backend/services/options.py`. Look for the `prompt = ...` block to adjust:
-> - Profit Targets (currently 10-80%)
-> - Hold Times (minutes vs hours)
-> - Risk Tolerance (Delta range)
+This project consists of two frontends sharing a single FastAPI backend:
 
-### 📊 Professional Charting
-- **Candlestick charts** with lightweight-charts v5
-- **Multi-Timeframe**: 1m, 5m, 15m, 30m, 1h, 4h, 1d, 1wk
-- **Toggleable EMAs**: 9, 20, 50, 200
-- **Volume bars** with up/down coloring
-- **Indicator badges**: RSI, ATR, 52-week proximity, earnings dates
+| Component | Description | Port |
+|-----------|-------------|------|
+| **Backend** | FastAPI with UUID-based auth, personal finance, trading | `8000` |
+| **Options Frontend** | Original options scanner | `5420` (prod: `8420`) |
+| **Finance Flow** | Personal finance dashboard (integrated) | `3000` |
 
-### ⚡ Options Scanner
-- **Scalp Score™**: Proprietary ranking for short-term momentum.
-- **Visual Heatmap**:
-  - **Rev% (Reversal Percentage)**: Green highlighting for high-potential reversal plays.
-  - **R:R (Risk:Reward)**: Calculated based on potential reversal vs downside risk.
-  - **OTM Dimming**: Instantly spot the "At-The-Money" line with dimmed OTM strikes.
-- **Greeks**: Real-time Delta, Gamma, Theta, Vega for every option.
-- **Filters**: Sort by Price, Spread, Volume, DTE.
+### Backend Design
 
-![Screenshot Placeholder: Scanner Dashboard]
+The backend uses a **layered architecture**:
 
-### 💰 Profit Estimator
-- **Interactive P&L Chart**: Visualize profit at expiry vs now.
-- **Stock Chart Overlay**: View the underlying stock chart directly on the estimator page (1m timeframe).
-- **Time Slider**: See how Theta decay affects your position hour-by-hour.
-- **URL Persistence**: Share or refresh specific option analysis pages (`#option/TICKER/SYMBOL`).
-- **Scenarios**: Quick buttons for ±5%, ±10%, Breakeven.
+```
+backend/
+├── app/
+│   ├── api/v1/routers/    # API endpoints
+│   ├── models/            # SQLAlchemy ORM models (UUID-based)
+│   ├── schemas/           # Pydantic request/response schemas
+│   ├── services/          # Business logic
+│   ├── repositories/      # Data access layer
+│   ├── domain/            # Domain models (legacy)
+│   ├── infrastructure/    # Database, external services
+│   └── core/              # Config, dependencies, security
+├── migrations/            # SQL migrations
+└── tests/                 # Pytest test suites
+```
 
-![Screenshot Placeholder: Profit Estimator]
+### Key API Endpoints
 
-### 🔄 Live Data & Controls
-- **Manual Refresh**: On-demand price updates with rate-limit protection.
-- **Live Indicator**: Visual feedback when price data is updated.
-- **Smart Caching**: prevents unnecessary API calls while keeping data fresh.
+| Endpoint Group | Prefix | Purpose |
+|----------------|--------|---------|
+| Auth | `/api/v1/auth/*` | Login, register, JWT tokens |
+| Profiles | `/api/v1/profiles/*` | User profiles |
+| Roles | `/api/v1/roles/*` | RBAC, admin checks |
+| Connected Accounts | `/api/v1/connected-accounts/*` | Bank/brokerage links |
+| Market Data | `/api/v1/market/*` | Quotes, options chains |
+| Net Worth | `/api/v1/net-worth/*` | Financial tracking |
+| WebSocket | `/api/v1/ws/connect` | Real-time updates |
 
-## Quick Start
+---
 
-### Option 1: Docker (Recommended)
+## 🚀 Quick Start
+
+### Docker (Recommended)
 
 ```bash
-# 1. Add your Gemini API key
+# 1. Set up environment
 cp backend/.env.example backend/.env
-# Edit backend/.env and add your GEMINI_API_KEY
+# Edit backend/.env with your API keys
 
-# 2. Build and start containers
+# 2. Build and start all services
 docker-compose up -d --build
+
+# Access:
+# - Options Scanner: http://localhost:5420
+# - Finance Flow: http://localhost:3000
+# - Backend API: http://localhost:8000/docs
 ```
 
-**Access the app:** http://localhost:8420
+### Local Development
 
-The containers have `restart: always` so they will **auto-start on boot** as long as Docker Desktop is running.
-
-**Useful commands:**
+**Backend:**
 ```bash
-docker-compose logs -f      # View logs
-docker-compose down         # Stop containers
-docker-compose up -d        # Restart without rebuilding
-```
-
-### Option 2: Manual Development Setup
-
-```bash
-# Backend
 cd backend
-pip install -r requirements.txt
-GEMINI_API_KEY=your_key uvicorn main:app --reload
 
-# Frontend  
+# Create virtual environment and install deps
+uv venv
+uv sync
+
+# Run the server
+uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+**Options Frontend:**
+```bash
 cd frontend
 npm install
-npm run dev
+npm run dev  # Runs on :5173 in dev, :5420 in Docker
 ```
 
-Open http://localhost:5173
+**Finance Flow Frontend:**
+```bash
+cd ../finance-flow
+npm install
 
-### Remote Access with Tailscale (Optional)
+# Set API URL for local development
+echo "VITE_API_URL=http://localhost:8000" > .env.local
 
-To access from anywhere using Tailscale Funnel:
+npm run dev  # Runs on :5173
+```
+
+---
+
+## 📦 Docker Commands
 
 ```bash
-tailscale funnel --bg 8420
+# Start all services
+docker-compose up -d
+
+# View logs
+docker-compose logs -f backend
+
+# Rebuild after code changes
+docker-compose up -d --build
+
+# Stop everything
+docker-compose down
+
+# Production (uses pre-built images)
+docker-compose -f docker-compose.prod.yml up -d
 ```
 
-This exposes the app at your Tailscale URL (persists across reboots).
+---
 
-## Tech Stack
+## 🔧 Making Backend Updates
 
-- **Frontend**: React 18, Vite, lightweight-charts v5
-- **Backend**: Python FastAPI, yfinance, google-generativeai
-- **AI**: Gemini 2.5 Flash for high-speed analysis
+When adding new features to the backend:
 
-## API Endpoints
+### 1. Create the Model (`app/models/`)
+```python
+# Use UUID primary keys
+from sqlalchemy.dialects.postgresql import UUID
+import uuid
 
-| Endpoint | Description |
-|----------|-------------|
-| `GET /api/scan` | Scan all stocks, returns top 50 by scalp score |
-| `GET /api/options/{ticker}` | Full options chain with Greeks & Rev% |
-| `GET /api/history/{ticker}` | OHLCV + EMAs + RSI across timeframes |
-| `POST /api/ai-recommend` | AI analysis with Trading Plan |
+class MyModel(Base):
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+```
 
-## Disclaimer
+### 2. Create the Schema (`app/schemas/`)
+```python
+from pydantic import BaseModel
+from uuid import UUID
+
+class MyModelResponse(BaseModel):
+    id: UUID
+    # ... fields
+    class Config:
+        from_attributes = True
+```
+
+### 3. Create the Router (`app/api/v1/routers/`)
+```python
+from app.infrastructure.db import get_async_session  # Use this for session
+from app.core.deps import get_current_user           # For auth
+
+router = APIRouter(prefix="/my-endpoint", tags=["my-endpoint"])
+```
+
+### 4. Register the Router (`app/api/v1/router.py`)
+```python
+from app.api.v1.routers import my_router
+api_router.include_router(my_router.router)
+```
+
+### 5. Add Migration (`migrations/`)
+Create a SQL file with table definitions.
+
+### Common Issues
+
+| Issue | Solution |
+|-------|----------|
+| `ImportError: email-validator` | Run `uv add email-validator` |
+| `ImportError: get_async_session` | It's an alias for `get_db` in `infrastructure/db.py` |
+| Circular imports | Move imports inside functions, avoid service imports at module level |
+
+---
+
+## 🗄️ Database Migration
+
+Run the SQL migration to create new tables:
+
+```bash
+# For PostgreSQL
+psql -U postgres -d your_database -f backend/migrations/001_finance_flow_integration.sql
+
+# For SQLite (development)
+# Tables are auto-created by SQLAlchemy on first run
+```
+
+---
+
+## 🧪 Testing
+
+```bash
+cd backend
+
+# Run all tests
+uv run python -m pytest tests/ -v
+
+# Run finance-flow integration tests only
+uv run python -m pytest tests/test_finance_flow_integration.py -v
+
+# Run with coverage
+uv run python -m pytest --cov=app tests/
+```
+
+---
+
+## 📁 Environment Variables
+
+**Backend (`backend/.env`):**
+```env
+# Required
+GEMINI_API_KEY=your_gemini_api_key
+DATABASE_URL=sqlite+aiosqlite:///./data/trading.db
+
+# Optional - Financial Integrations
+PLAID_CLIENT_ID=
+PLAID_SECRET=
+SNAPTRADE_CLIENT_ID=
+SNAPTRADE_CONSUMER_KEY=
+
+# Security
+JWT_SECRET_KEY=your-secret-key
+FINANCE_ENCRYPTION_KEY=  # For encrypting API keys
+```
+
+**Finance Flow Frontend:**
+```env
+VITE_API_URL=http://localhost:8000
+VITE_WS_URL=ws://localhost:8000
+```
+
+---
+
+## 🤖 AI Features
+
+- **AI Trade Advisor**: Gemini 2.5 Flash analysis across 5 timeframes
+- **Smart Strike Selection**: Targets ATM/Near-OTM options (Delta 0.15-0.85)
+- Customize prompts in `backend/services/options.py`
+
+---
+
+## 📋 Tech Stack
+
+| Layer | Technology |
+|-------|------------|
+| Backend | Python 3.12, FastAPI, SQLAlchemy, Pydantic |
+| Frontend | React 18, Vite, TailwindCSS |
+| Database | PostgreSQL (prod), SQLite (dev) |
+| AI | Google Gemini 2.5 Flash |
+| Auth | JWT tokens, UUID-based users |
+| Real-time | WebSockets |
+
+---
+
+## ⚠️ Disclaimer
 
 For educational purposes only. Options trading involves significant risk. Always do your own research.
 
@@ -125,6 +262,3 @@ For educational purposes only. Options trading involves significant risk. Always
 
 MIT
 
----
-
-**Built for traders**

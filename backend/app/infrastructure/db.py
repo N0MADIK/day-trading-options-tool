@@ -56,10 +56,23 @@ async def init_db() -> None:
     """Initialize database tables"""
     async with engine.begin() as conn:
         # Import all models here to ensure they are registered
-        from app.domain.models import TickerWatchlist, OptionWatchlist, Strategy, Trade, CustomStrategy, StrategyLog
+        from app.domain.models import (
+            TickerWatchlist, OptionWatchlist, Strategy, Trade, CustomStrategy, StrategyLog,
+            StrategyExecution, StrategySignal, StrategyPerformance, StrategyTemplate, StrategyBacktest
+        )
+        from app.models.user import User
+        from app.models.integrations import UserIntegration, ConnectedAccount
+        from app.models.personal_finance import Institution, Connection, Account, Security, Holding, Transaction, SyncJob
+        from app.models.notification import Notification, NotificationTemplate, NotificationDigest
+        from app.models.notification_settings import NotificationSettings
         await conn.run_sync(Base.metadata.create_all)
 
 
 async def close_db() -> None:
     """Close database connections"""
     await engine.dispose()
+
+
+# Alias for compatibility with routers using this name
+get_async_session = get_db
+

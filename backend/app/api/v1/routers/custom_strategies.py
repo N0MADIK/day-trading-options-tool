@@ -1,10 +1,11 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, Body
-from typing import List, Optional
+from fastapi import APIRouter, Depends, HTTPException, Query, Body, Path
+from typing import List, Optional, Dict, Any
+from datetime import datetime
 import json
 
 from app.services.custom_strategy_service import (
     CustomStrategyService, StrategySchedulerService, StrategyTemplateService,
-    StrategyBacktestService, StrategyExecutionService
+    StrategyBacktestService
 )
 from app.repositories.sqlalchemy.custom_strategy_repo import (
     SQLAlchemyCustomStrategyRepository, SQLAlchemyStrategyExecutionRepository,
@@ -231,7 +232,7 @@ async def get_strategies_by_schedule_type(
 
 @strategies_router.get("/tags/{tags}", response_model=dict)
 async def get_strategies_by_tags(
-    tags: str = Query(..., description="Comma-separated tags"),
+    tags: str = Path(..., description="Comma-separated tags"),
     service: CustomStrategyService = Depends(get_custom_strategy_service)
 ):
     """Get strategies by tags"""
@@ -519,7 +520,7 @@ async def get_signals_by_strategy(
     strategy_id: int,
     symbol: Optional[str] = Query(None, description="Filter by symbol"),
     signal_type: Optional[str] = Query(None, description="Filter by signal type"),
-    action: Optional[str] = Query(None, regex="^(BUY|SELL|HOLD)$", description="Filter by action"),
+    action: Optional[str] = Query(None, pattern="^(BUY|SELL|HOLD)$", description="Filter by action"),
     is_executed: Optional[bool] = Query(None, description="Filter by execution status"),
     start_time: Optional[datetime] = Query(None, description="Filter by start time"),
     end_time: Optional[datetime] = Query(None, description="Filter by end time"),

@@ -13,12 +13,21 @@ services:
       - path: ./backend/.env
         required: false
 
+  # Original day-trading frontend
   frontend:
     image: ghcr.io/nolancassidy/day-trading-options-tool/frontend:latest
     container_name: options-frontend
     restart: always
     ports:
       - "8420:80"
+
+  # Finance-flow frontend (integrated dashboard)
+  finance-flow:
+    image: ghcr.io/nolancassidy/day-trading-options-tool/finance-flow:latest
+    container_name: finance-flow-frontend
+    restart: always
+    ports:
+      - "3000:80"
 
   watchtower:
     image: containrrr/watchtower
@@ -31,4 +40,4 @@ services:
       - WATCHTOWER_CLEANUP=true
       - WATCHTOWER_POLL_INTERVAL=300
       - WATCHTOWER_INCLUDE_RESTARTING=true
-    command: --interval 300 options-backend options-frontend
+    command: --interval 300 options-backend options-frontend finance-flow-frontend

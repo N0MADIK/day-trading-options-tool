@@ -342,7 +342,7 @@ class SQLAlchemyStrategyExecutionRepository(StrategyExecutionRepository):
         try:
             execution_id = str(uuid.uuid4())
             execution = StrategyExecution(
-                execution_id=execution_id,
+                id=execution_id,
                 strategy_id=execution_request.strategy_id,
                 status="RUNNING",
                 started_at=datetime.utcnow(),
@@ -381,7 +381,7 @@ class SQLAlchemyStrategyExecutionRepository(StrategyExecutionRepository):
         """Get a single strategy execution by ID"""
         try:
             result = await self.session.execute(
-                sa.select(StrategyExecution).where(StrategyExecution.execution_id == execution_id)
+                sa.select(StrategyExecution).where(StrategyExecution.id == execution_id)
             )
             execution = result.scalar_one_or_none()
             
@@ -389,7 +389,7 @@ class SQLAlchemyStrategyExecutionRepository(StrategyExecutionRepository):
                 return None
             
             return {
-                'execution_id': execution.execution_id,
+                'execution_id': execution.id,
                 'strategy_id': execution.strategy_id,
                 'status': execution.status,
                 'started_at': execution.started_at,
@@ -421,7 +421,7 @@ class SQLAlchemyStrategyExecutionRepository(StrategyExecutionRepository):
             execution_list = []
             for execution in executions:
                 execution_list.append({
-                    'execution_id': execution.execution_id,
+                    'execution_id': execution.id,
                     'strategy_id': execution.strategy_id,
                     'status': execution.status,
                     'started_at': execution.started_at,
@@ -451,7 +451,7 @@ class SQLAlchemyStrategyExecutionRepository(StrategyExecutionRepository):
             execution_list = []
             for execution in executions:
                 execution_list.append({
-                    'execution_id': execution.execution_id,
+                    'execution_id': execution.id,
                     'strategy_id': execution.strategy_id,
                     'status': execution.status,
                     'started_at': execution.started_at,
@@ -468,7 +468,7 @@ class SQLAlchemyStrategyExecutionRepository(StrategyExecutionRepository):
         """Update execution results"""
         try:
             execution = await self.session.execute(
-                sa.select(StrategyExecution).where(StrategyExecution.execution_id == execution_id)
+                sa.select(StrategyExecution).where(StrategyExecution.id == execution_id)
             ).scalar_one_or_none()
             
             if not execution:
@@ -492,7 +492,7 @@ class SQLAlchemyStrategyExecutionRepository(StrategyExecutionRepository):
         """Cancel a running execution"""
         try:
             execution = await self.session.execute(
-                sa.select(StrategyExecution).where(StrategyExecution.execution_id == execution_id)
+                sa.select(StrategyExecution).where(StrategyExecution.id == execution_id)
             ).scalar_one_or_none()
             
             if not execution or execution.status != "RUNNING":
@@ -522,7 +522,7 @@ class SQLAlchemyStrategyExecutionRepository(StrategyExecutionRepository):
             execution_list = []
             for execution in executions:
                 execution_list.append({
-                    'execution_id': execution.execution_id,
+                    'execution_id': execution.id,
                     'strategy_id': execution.strategy_id,
                     'started_at': execution.started_at,
                     'duration_seconds': (datetime.utcnow() - execution.started_at).total_seconds()
