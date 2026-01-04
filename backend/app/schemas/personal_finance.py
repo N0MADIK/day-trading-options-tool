@@ -440,7 +440,7 @@ class SyncJobResponse(BaseModel):
 # File Import Models
 class FileImportRequest(BaseModel):
     """Request for file import"""
-    file_type: str = Field(..., regex="^(csv|ofx|qfx)$", description="File type (csv, ofx, qfx)")
+    file_type: str = Field(..., pattern="^(csv|ofx|qfx)$", description="File type (csv, ofx, qfx)")
     account_id: Optional[int] = Field(None, description="Target account ID")
     connection_id: Optional[int] = Field(None, description="Target connection ID")
     mapping: Optional[Dict[str, str]] = Field(None, description="Field mapping configuration")

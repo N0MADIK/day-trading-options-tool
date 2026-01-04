@@ -140,3 +140,43 @@ class TradeAnalysisResponse(BaseModel):
     group_by: str
     data_points: List[dict]
     summary: dict
+
+
+class TradePaymentRequest(BaseModel):
+    """Request for trade payment analysis"""
+    user_id: int = Field(..., ge=1, description="User ID")
+    symbol: str = Field(..., min_length=1, max_length=10, description="Trade symbol")
+    shares: int = Field(..., ge=1, description="Number of shares")
+    price: float = Field(..., gt=0, description="Price per share")
+    trade_type: str = Field(..., description="Trade type (buy or sell)")
+    
+    @validator('symbol')
+    def normalize_symbol(cls, v):
+        return v.upper().strip()
+    
+    @validator('trade_type')
+    def validate_trade_type(cls, v):
+        if v.upper() not in ['BUY', 'SELL']:
+            raise ValueError('trade_type must be either "buy" or "sell"')
+        return v.upper()
+
+
+class AssetSaleInfo(BaseModel):
+    """Information about an asset sold to pay for a trade"""
+    symbol: str
+    shares_sold: int
+    sale_price_per_share: float
+    gross_proceeds: float
+    taxes: float
+    net_proceeds: float
+    purchase_date: str
+    days_held: int
+    tax_rate: str
+
+
+class TradePaymentResponse(BaseModel):
+    """Response model for trade payment analysis"""
+    success: bool
+    trade: dict
+    payment_analysis: dict
+    message: Optional[str] = None

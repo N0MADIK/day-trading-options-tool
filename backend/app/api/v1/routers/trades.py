@@ -2,13 +2,14 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Body
 from typing import List, Optional
 
 from app.services.trade_service import TradeService
+from app.services.trade_payment_service import TradePaymentService
 from app.repositories.sqlalchemy.trade_repo import SQLAlchemyTradeRepository
 from app.infrastructure.db import get_async_session
 from app.schemas.trades import (
     TradeCreateRequest, TradeUpdateRequest, TradeCloseRequest,
     TradeListRequest, TradeStatsResponse, TradePerformanceResponse,
     TradeBatchRequest, TradeBatchUpdateRequest, TradeAnalysisRequest,
-    TradeAnalysisResponse
+    TradeAnalysisResponse, TradePaymentRequest, TradePaymentResponse
 )
 from app.domain.errors import NotFoundError, ConflictError, ValidationError
 
@@ -20,6 +21,39 @@ async def get_trade_service() -> TradeService:
     session = await get_async_session()
     repository = SQLAlchemyTradeRepository(session)
     return TradeService(repository)
+
+
+# Dependency for trade payment service
+async def get_trade_payment_service() -> TradePaymentService:
+    """Get trade payment service with personal finance service"""
+    from app.services.personal_finance_service import PersonalFinanceService
+    from app.repositories.sqlalchemy.personal_finance_repo import (
+        SQLAlchemyInstitutionRepository, SQLAlchemyConnectionRepository,
+        SQLAlchemyAccountRepository, SQLAlchemySecurityRepository,
+        SQLAlchemyHoldingRepository, SQLAlchemyTransactionRepository,
+        SQLAlchemySyncJobRepository, SQLAlchemyFileImportRepository,
+        SQLAlchemyPersonalFinanceAnalyticsRepository,
+        SQLAlchemyPersonalFinanceIntegrationRepository
+    )
+    
+    session = await get_async_session()
+    institution_repo = SQLAlchemyInstitutionRepository(session)
+    connection_repo = SQLAlchemyConnectionRepository(session)
+    account_repo = SQLAlchemyAccountRepository(session)
+    security_repo = SQLAlchemySecurityRepository(session)
+    holding_repo = SQLAlchemyHoldingRepository(session)
+    transaction_repo = SQLAlchemyTransactionRepository(session)
+    sync_job_repo = SQLAlchemySyncJobRepository(session)
+    file_import_repo = SQLAlchemyFileImportRepository(session)
+    analytics_repo = SQLAlchemyPersonalFinanceAnalyticsRepository(session)
+    integration_repo = SQLAlchemyPersonalFinanceIntegrationRepository(session)
+    
+    pf_service = PersonalFinanceService(
+        institution_repo, connection_repo, account_repo, security_repo, holding_repo,
+        transaction_repo, sync_job_repo, file_import_repo, analytics_repo, integration_repo
+    )
+    
+    return TradePaymentService(pf_service)
 
 
 @router.post("/", response_model=dict)
@@ -278,5 +312,111 @@ async def get_risk_metrics(
     """Get risk metrics for open trades"""
     try:
         return await service.get_risk_metrics()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/payment-analysis", response_model=TradePaymentResponse)
+async def analyze_trade_payment(
+    payment_request: TradePaymentRequest,
+    service: TradePaymentService = Depends(get_trade_payment_service)
+):
+    """
+    Analyze how to pay for a trade using available cash or selling assets with tax implications
+    
+    This endpoint determines the optimal way to fund a trade by:
+    1. Checking if available cash can cover the trade cost
+    2. If cash is insufficient, calculating which assets to sell to minimize tax impact
+    3. Computing capital gains taxes based on holding periods (long-term vs short-term)
+    4. Providing detailed breakdown of asset sales and tax implications
+    
+    **Tax Logic:**
+    - Long-term capital gains (held > 365 days): 15% tax rate
+    - Short-term capital gains (held ≤ 365 days): 25% tax rate
+    - No tax on losses (only profits are taxed)
+    - Assets are sold in tax-efficient order to minimize overall tax burden
+    
+    **Payment Strategies:**
+    - `use_cash`: Direct cash payment when sufficient funds available
+    - `sell_assets`: Liquidate assets when cash insufficient but portfolio value adequate
+    - `insufficient_funds`: Even selling all assets won't cover the trade cost
+    
+    **Request Body:**
+    ```json
+    {
+      "user_id": 1,
+      "symbol": "NVDA",
+      "shares": 50,
+      "price": 800.0,
+      "trade_type": "buy"
+    }
+    ```
+    
+    **Response:**
+    ```json
+    {
+      "success": true,
+      "trade": {
+        "symbol": "NVDA",
+        "shares": 50,
+        "price": 800.0,
+        "total_cost": 40000.0,
+        "trade_type": "BUY"
+      },
+      "payment_analysis": {
+        "action": "sell_assets",
+        "cash_used": 40000.0,
+        "assets_sold": [
+          {
+            "symbol": "AAPL",
+            "shares_sold": 20,
+            "sale_price_per_share": 150.0,
+            "gross_proceeds": 3000.0,
+            "taxes": 450.0,
+            "net_proceeds": 2550.0,
+            "purchase_date": "2023-01-01",
+            "days_held": 1098,
+            "tax_rate": "0.15 (long-term)"
+          }
+        ],
+        "taxes_paid": 450.0,
+        "total_sold_value": 3000.0,
+        "remaining_cash": 2550.0,
+        "message": "Trade paid for by selling assets. Total taxes: $450.00, Remaining cash: $2,550.00"
+      }
+    }
+    ```
+    
+    Args:
+        payment_request: Trade details and user ID for payment analysis
+        
+    Returns:
+        Comprehensive payment analysis including asset sales, taxes, and remaining cash
+        
+    Raises:
+        HTTPException: For validation errors, missing user data, or service errors
+    """
+    try:
+        result = await service.analyze_trade_payment(
+            user_id=payment_request.user_id,
+            trade_info={
+                "symbol": payment_request.symbol,
+                "shares": payment_request.shares,
+                "price": payment_request.price,
+                "trade_type": payment_request.trade_type
+            }
+        )
+        
+        return TradePaymentResponse(
+            success=result["success"],
+            trade=result["trade"],
+            payment_analysis=result["payment_analysis"],
+            message=result["payment_analysis"].get("message")
+        )
+        
+    except ValidationError as e:
+        raise HTTPException(status_code=400, detail=e.message)
+    except NotFoundError as e:
+        raise HTTPException(status_code=404, detail=e.message)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
