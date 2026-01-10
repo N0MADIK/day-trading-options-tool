@@ -1,9 +1,19 @@
-"""Market Data API router - Stock quotes and options chains"""
+"""Market Data API router - Stock quotes and options chains
+
+Market data access pattern:
+- yfinance is the default free provider (no API key needed)
+- Users can subscribe to premium providers (Alpaca, Polygon, etc.)
+- Subscription status is checked but currently only logged (future: route to provider)
+"""
 from fastapi import APIRouter, Depends, HTTPException, Query
-from typing import Optional, List
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
+from typing import Optional, List, Dict, Any
 from datetime import datetime, date
+import logging
 
 from app.core.deps import get_current_user
+from app.infrastructure.db import get_async_session
 from app.schemas.market_data import (
     StockQuoteRequest,
     StockQuoteResponse,
@@ -13,24 +23,65 @@ from app.schemas.market_data import (
     SymbolSearchResult
 )
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/market", tags=["market-data"])
+
+
+async def get_active_subscriptions(user_id: str, session: AsyncSession) -> List[Dict[str, Any]]:
+    """
+    Get active market data subscriptions for the user.
+    Returns list of active provider configurations.
+    """
+    try:
+        from app.models.market_data_subscription import MarketDataSubscription
+        from uuid import UUID
+        
+        user_uuid = UUID(user_id)
+        result = await session.execute(
+            select(MarketDataSubscription).where(
+                MarketDataSubscription.user_id == user_uuid,
+                MarketDataSubscription.is_active == True
+            )
+        )
+        subscriptions = result.scalars().all()
+        
+        return [
+            {
+                "provider": sub.provider_name,
+                "type": sub.provider_type,
+                "tier": sub.subscription_tier,
+                "features": sub.features or []
+            }
+            for sub in subscriptions
+        ]
+    except Exception as e:
+        logger.warning(f"Could not fetch subscriptions for user {user_id}: {e}")
+        return []
 
 
 @router.post("/quote", response_model=StockQuoteResponse)
 async def get_stock_quote(
     request: StockQuoteRequest,
-    current_user_id: str = Depends(get_current_user)
+    current_user_id: str = Depends(get_current_user),
+    session: AsyncSession = Depends(get_async_session)
 ):
     """
     Get real-time stock quote.
-    Uses Yahoo Finance by default, can use user's data subscription if available.
+    Uses Yahoo Finance by default.
+    Premium providers (Alpaca, Polygon) available if user has subscription.
     """
-    # Import the options service for market data
+    # Check for active subscriptions (for logging/future use)
+    subscriptions = await get_active_subscriptions(current_user_id, session)
+    
+    # Log available premium providers (future: route to them)
+    premium_providers = [s["provider"] for s in subscriptions if s["type"] != "free"]
+    if premium_providers:
+        logger.info(f"User {current_user_id} has premium providers: {premium_providers}")
+    
+    # Currently we use yfinance for all requests
+    # Future: route to premium provider if available
     try:
-        from app.services.options_service import OptionsService
-        options_service = OptionsService()
-        
-        # Use yfinance for basic quote
         import yfinance as yf
         ticker = yf.Ticker(request.symbol)
         info = ticker.info
