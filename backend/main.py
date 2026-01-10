@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.infrastructure.db import init_db, close_db
 from app.api.v1.router import api_router
-from app.core.errors import BaseDomainError
+from app.domain.errors import BaseDomainError
 
 
 @asynccontextmanager

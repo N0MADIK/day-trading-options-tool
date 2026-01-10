@@ -40,4 +40,4 @@ class CustomNotificationRule(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     
     def __repr__(self):
-        return f"<CustomNotificationRule(user_id={self.user_id}, name={self.rule_name})>"
+        return f"<CustomNotificationRule(user_id={self.user_id}, name={self.name})>"

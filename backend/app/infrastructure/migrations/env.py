@@ -12,8 +12,7 @@ sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
 from app.core.config import settings
 from app.infrastructure.db import Base
-from app.domain import models  # Import all models
-from app.models import User, UserIntegration, ConnectedAccount
+from app.models import *  # Import all models from the unified init file
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

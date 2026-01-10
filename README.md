@@ -12,9 +12,9 @@ This project consists of two frontends sharing a single FastAPI backend:
 
 | Component | Description | Port |
 |-----------|-------------|------|
-| **Backend** | FastAPI with UUID-based auth, personal finance, trading | `8000` |
-| **Options Frontend** | Original options scanner | `5420` (prod: `8420`) |
-| **Finance Flow** | Personal finance dashboard (integrated) | `3000` |
+| **Backend** | FastAPI with UUID-based auth, personal finance, trading | `8420` |
+| **Options Frontend** | Original options scanner UI | `5420` |
+| **Frontend v2** | Personal finance dashboard (React + Vite) | `3000` |
 
 ### Backend Design
 
@@ -88,13 +88,13 @@ npm install
 npm run dev  # Runs on :5173 in dev, :5420 in Docker
 ```
 
-**Finance Flow Frontend:**
+**Frontend v2 (Finance Dashboard):**
 ```bash
-cd ../finance-flow
+cd frontend_v2
 npm install
 
-# Set API URL for local development
-echo "VITE_API_URL=http://localhost:8000" > .env.local
+# Create .env.local for local development
+echo "VITE_API_URL=http://localhost:8420/api" > .env.local
 
 npm run dev  # Runs on :5173
 ```
@@ -225,10 +225,13 @@ JWT_SECRET_KEY=your-secret-key
 FINANCE_ENCRYPTION_KEY=  # For encrypting API keys
 ```
 
-**Finance Flow Frontend:**
+**Frontend v2 (`frontend_v2/.env.local`):**
 ```env
-VITE_API_URL=http://localhost:8000
-VITE_WS_URL=ws://localhost:8000
+# Local development (direct backend)
+VITE_API_URL=http://localhost:8420/api
+
+# Docker (leave empty - uses nginx proxy)
+# VITE_API_URL=
 ```
 
 ---

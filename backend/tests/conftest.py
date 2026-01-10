@@ -8,8 +8,8 @@ from httpx import AsyncClient, ASGITransport
 from app.infrastructure.db import Base
 from app.main import app
 from app.core.deps import get_current_user
-# Import models to ensure they are registered with Base.metadata
-from app.domain import models
+# Import all models to ensure they are registered with Base.metadata
+from app.models import *
 
 
 # Test database URL
@@ -30,12 +30,7 @@ TestAsyncSessionFactory = async_sessionmaker(
 )
 
 
-@pytest.fixture(scope="session")
-def event_loop():
-    """Create an event loop for the test session"""
-    loop = asyncio.get_event_loop_policy().new_event_loop()
-    yield loop
-    loop.close()
+
 
 
 @pytest.fixture(scope="function")

@@ -24,20 +24,23 @@ services:
       - "5420:80"
     depends_on:
       - backend
+    profiles: ["v1"]
 
-  # Finance-flow frontend (integrated dashboard)
-  finance-flow:
+  # Finance Flow Frontend v2 (integrated dashboard)
+  frontend_v2:
     build:
-      context: ../finance-flow
+      context: ./frontend_v2
       args:
-        VITE_API_URL: http://localhost:8000
-        VITE_WS_URL: ws://localhost:8000
+        # API calls go through nginx proxy to backend container
+        VITE_API_URL: ""
+        VITE_WS_URL: ""
     container_name: finance-flow-frontend
     restart: always
     ports:
       - "3000:80"
     depends_on:
       - backend
+    profiles: ["v2"]
 
 networks:
   default:

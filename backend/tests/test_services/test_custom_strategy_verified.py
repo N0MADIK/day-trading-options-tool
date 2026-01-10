@@ -38,7 +38,7 @@ async def test_create_custom_strategy(custom_strategy_service):
         name="Test Strategy",
         description="A test strategy",
         code="def execute(context):\n    return [{'action': 'BUY', 'symbol': 'AAPL'}]",
-        execution_type=StrategyExecutionType.HOST,
+        execution_type=StrategyExecutionType.PYTHON_SCRIPT,
         schedule_type=StrategyScheduleType.INTERVAL,
         schedule_value="300"
     )
@@ -55,7 +55,7 @@ async def test_get_custom_strategy(custom_strategy_service):
     strategy_data = CustomStrategyCreateRequest(
         name="Get Test Strategy",
         code="pass",
-        execution_type=StrategyExecutionType.HOST
+        execution_type=StrategyExecutionType.PYTHON_SCRIPT
     )
     created = await custom_strategy_service.create_custom_strategy(strategy_data)
     strategy_id = created["strategy_id"]
@@ -71,7 +71,7 @@ async def test_toggle_strategy(custom_strategy_service):
     strategy_data = CustomStrategyCreateRequest(
         name="Toggle Test",
         code="pass",
-        execution_type=StrategyExecutionType.HOST
+        execution_type=StrategyExecutionType.PYTHON_SCRIPT
     )
     created = await custom_strategy_service.create_custom_strategy(strategy_data)
     strategy_id = created["strategy_id"]
@@ -90,7 +90,7 @@ async def test_execute_strategy_dry_run(custom_strategy_service):
     strategy_data = CustomStrategyCreateRequest(
         name="Execute Test",
         code="def execute(context):\n    # Simple strategy\n    return [{'action': 'BUY', 'symbol': 'AAPL', 'quantity': 10}]",
-        execution_type=StrategyExecutionType.HOST
+        execution_type=StrategyExecutionType.PYTHON_SCRIPT
     )
     created = await custom_strategy_service.create_custom_strategy(strategy_data)
     strategy_id = created["strategy_id"]

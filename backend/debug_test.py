@@ -10,7 +10,7 @@ from app.infrastructure.db import engine, Base, AsyncSessionFactory
 from app.domain import models
 from app.repositories.sqlalchemy.custom_strategy_repo import SQLAlchemyCustomStrategyRepository
 from app.services.custom_strategy_service import CustomStrategyService
-from app.schemas.custom_strategies import CustomStrategyCreateRequest, ExecutionType
+from app.schemas.custom_strategies import CustomStrategyCreateRequest, StrategyExecutionType
 
 async def main():
     print("Starting debug test...")
@@ -27,7 +27,7 @@ async def main():
             strategy_data = CustomStrategyCreateRequest(
                 name="Debug Strategy",
                 code="pass",
-                execution_type=ExecutionType.HOST
+                execution_type=StrategyExecutionType.PYTHON_SCRIPT
             )
             
             print("Creating strategy...")

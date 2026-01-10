@@ -1,0 +1,16 @@
+project_id = "xxcbpyostrrmtrqodycw"
+
+[functions.plaid-link]
+verify_jwt = false
+
+[functions.snaptrade-link]
+verify_jwt = false
+
+[functions.market-data]
+verify_jwt = false
+
+[functions.trade-execution]
+verify_jwt = false
+
+[functions.send-trade-alert]
+verify_jwt = false
