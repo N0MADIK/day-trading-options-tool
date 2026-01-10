@@ -76,8 +76,9 @@ async function request<T>(
         headers,
     };
 
-    if (body) {
-        config.body = JSON.stringify(body);
+    if (body !== undefined) {
+        // Don't stringify if body is already a string (e.g., form-urlencoded data)
+        config.body = typeof body === 'string' ? body : JSON.stringify(body);
     }
 
     const url = `${API_URL}${endpoint}`;
