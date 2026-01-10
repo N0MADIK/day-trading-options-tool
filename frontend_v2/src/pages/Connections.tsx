@@ -44,7 +44,7 @@ import { usePlaid } from "@/hooks/usePlaid";
 import { useSnapTrade } from "@/hooks/useSnapTrade";
 import { CSVImport } from "@/components/connections/CSVImport";
 import { MarketDataConnections } from "@/components/connections/MarketDataConnections";
-import { supabase } from "@/integrations/supabase/client";
+import { api } from "@/lib/api";
 import { toast } from "sonner";
 
 interface Institution {
@@ -112,18 +112,18 @@ export default function Connections() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { accounts, loading, disconnectAccount, syncAccount, fetchAccounts } = useConnections();
-  const { 
-    createLinkToken, 
-    exchangeToken, 
-    getAccounts: getPlaidAccounts, 
-    getHoldings, 
+  const {
+    createLinkToken,
+    exchangeToken,
+    getAccounts: getPlaidAccounts,
+    getHoldings,
     isLoading: plaidLoading,
     linkToken,
     pendingInstitution,
     setPendingConnection
   } = usePlaid();
   const { registerUser, getLoginLink, getAccounts: getSnapTradeAccounts, userSecret, setUserSecret, isLoading: snapTradeLoading } = useSnapTrade();
-  
+
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<string>("all");
   const [activeTab, setActiveTab] = useState("connected");
@@ -134,16 +134,15 @@ export default function Connections() {
   useEffect(() => {
     const loadSnapTradeSecret = async () => {
       if (!user) return;
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('user_id', user.id)
-        .maybeSingle();
-      
-      // Check if metadata contains snaptrade secret
-      const metadata = (profile as any)?.metadata;
-      if (metadata?.snaptrade_user_secret) {
-        setUserSecret(metadata.snaptrade_user_secret);
+      try {
+        const profile = await api.get<{ metadata?: { snaptrade_user_secret?: string } }>('/profiles/me').catch(() => null);
+
+        // Check if metadata contains snaptrade secret
+        if (profile?.metadata?.snaptrade_user_secret) {
+          setUserSecret(profile.metadata.snaptrade_user_secret);
+        }
+      } catch (error) {
+        console.error('Error loading SnapTrade secret:', error);
       }
     };
     loadSnapTradeSecret();
@@ -166,7 +165,7 @@ export default function Connections() {
   // Plaid Link success handler
   const handlePlaidSuccess = useCallback(async (publicToken: string, metadata: any) => {
     if (!user || !pendingInstitution) return;
-    
+
     try {
       // Exchange public token for access token
       const tokenResult = await exchangeToken(publicToken);
@@ -174,34 +173,31 @@ export default function Connections() {
 
       // Get account details from Plaid
       const plaidAccounts = await getPlaidAccounts(tokenResult.accessToken);
-      
+
       if (plaidAccounts && plaidAccounts.length > 0) {
-        // Save each account to database
+        // Save each account via API
         for (const acc of plaidAccounts) {
-          await supabase
-            .from('connected_accounts')
-            .insert({
-              user_id: user.id,
-              institution_name: metadata.institution?.name || pendingInstitution.name,
-              institution_type: pendingInstitution.type,
-              account_name: acc.name || acc.official_name || `${pendingInstitution.name} Account`,
-              account_number_masked: acc.mask ? `****${acc.mask}` : null,
-              balance: acc.balances?.current || acc.balances?.available || 0,
-              currency: acc.balances?.iso_currency_code || 'USD',
-              is_connected: true,
-              connection_status: 'active',
-              last_synced_at: new Date().toISOString(),
-              metadata: {
-                provider: 'plaid',
-                institution_id: pendingInstitution.id,
-                plaid_item_id: tokenResult.itemId,
-                plaid_account_id: acc.account_id,
-                account_type: acc.type,
-                account_subtype: acc.subtype,
-              }
-            });
+          await api.post('/connected-accounts', {
+            institution_name: metadata.institution?.name || pendingInstitution.name,
+            institution_type: pendingInstitution.type,
+            account_name: acc.name || acc.official_name || `${pendingInstitution.name} Account`,
+            account_number_masked: acc.mask ? `****${acc.mask}` : null,
+            balance: acc.balances?.current || acc.balances?.available || 0,
+            currency: acc.balances?.iso_currency_code || 'USD',
+            is_connected: true,
+            connection_status: 'active',
+            last_synced_at: new Date().toISOString(),
+            metadata: {
+              provider: 'plaid',
+              institution_id: pendingInstitution.id,
+              plaid_item_id: tokenResult.itemId,
+              plaid_account_id: acc.account_id,
+              account_type: acc.type,
+              account_subtype: acc.subtype,
+            }
+          });
         }
-        
+
         toast.success(`Connected ${plaidAccounts.length} account(s) from ${pendingInstitution.name}!`);
         fetchAccounts();
         setActiveTab('connected');
@@ -231,15 +227,15 @@ export default function Connections() {
   // Connect via Plaid
   const connectPlaid = useCallback(async (institution: { id: string; name: string; type: string }) => {
     if (!user) return;
-    
+
     setConnecting(institution.id);
     setPendingConnection(institution);
-    
+
     try {
       // Create link token
       const token = await createLinkToken();
       if (!token) throw new Error('Failed to create Plaid link token');
-      
+
       // Link will be opened via useEffect when token is ready
       toast.info('Opening Plaid Link...', { description: 'Complete the connection in the popup.' });
     } catch (error: any) {
@@ -260,7 +256,7 @@ export default function Connections() {
   // Connect via SnapTrade
   const connectSnapTrade = useCallback(async (institution: Institution) => {
     if (!user) return;
-    
+
     setConnecting(institution.id);
     try {
       // Step 1: Register user with SnapTrade if not already registered
@@ -272,14 +268,14 @@ export default function Connections() {
 
       // Step 2: Get login link for the specific broker
       const loginUrl = await getLoginLink(secret, institution.id);
-      
+
       if (!loginUrl) {
         throw new Error('Failed to get SnapTrade connection link');
       }
 
       // Open SnapTrade connection portal in a new window
       const popup = window.open(loginUrl, 'snaptrade-connect', 'width=600,height=800');
-      
+
       toast.info('Complete the connection in the popup window', {
         description: 'Sign in to your brokerage account. Your credentials are handled securely by SnapTrade.',
         duration: 10000,
@@ -289,47 +285,44 @@ export default function Connections() {
       const checkForNewAccounts = setInterval(async () => {
         if (popup?.closed) {
           clearInterval(checkForNewAccounts);
-          
+
           // Give SnapTrade a moment to sync
           await new Promise(resolve => setTimeout(resolve, 1500));
-          
+
           // Check if account was added
           const snapAccounts = await getSnapTradeAccounts(secret);
           if (snapAccounts && snapAccounts.length > 0) {
             let newAccountsCount = 0;
-            
+
             // Save new accounts to database
             for (const acc of snapAccounts) {
               const existing = accounts.find(a => {
                 const meta = a.metadata as { snaptrade_account_id?: string } | null;
                 return meta?.snaptrade_account_id === acc.id;
               });
-              
+
               if (!existing) {
                 newAccountsCount++;
-                await supabase
-                  .from('connected_accounts')
-                  .insert({
-                    user_id: user.id,
-                    institution_name: acc.institution_name || institution.name,
-                    institution_type: institution.type,
-                    account_name: acc.name || `${institution.name} Account`,
-                    account_number_masked: acc.number || null,
-                    balance: acc.balance?.total?.amount || 0,
-                    currency: acc.balance?.total?.currency || 'USD',
-                    is_connected: true,
-                    connection_status: 'active',
-                    last_synced_at: new Date().toISOString(),
-                    metadata: {
-                      provider: 'snaptrade',
-                      institution_id: institution.id,
-                      snaptrade_account_id: acc.id,
-                      snaptrade_authorization_id: acc.brokerage_authorization,
-                    }
-                  });
+                await api.post('/connected-accounts', {
+                  institution_name: acc.institution_name || institution.name,
+                  institution_type: institution.type,
+                  account_name: acc.name || `${institution.name} Account`,
+                  account_number_masked: acc.number || null,
+                  balance: acc.balance?.total?.amount || 0,
+                  currency: acc.balance?.total?.currency || 'USD',
+                  is_connected: true,
+                  connection_status: 'active',
+                  last_synced_at: new Date().toISOString(),
+                  metadata: {
+                    provider: 'snaptrade',
+                    institution_id: institution.id,
+                    snaptrade_account_id: acc.id,
+                    snaptrade_authorization_id: acc.brokerage_authorization,
+                  }
+                });
               }
             }
-            
+
             if (newAccountsCount > 0) {
               toast.success(`Connected ${newAccountsCount} account(s) from ${institution.name}!`);
               fetchAccounts();
@@ -541,7 +534,7 @@ export default function Connections() {
                                   </span>
                                 </div>
                               </div>
-                              
+
                               <div className="p-4 bg-secondary rounded-lg">
                                 <h4 className="font-medium mb-2 flex items-center gap-2">
                                   <Database className="h-4 w-4" />
@@ -622,87 +615,87 @@ export default function Connections() {
               {accounts
                 .filter(a => (a.metadata as any)?.source !== "csv_import")
                 .map((account) => {
-                const institution = getInstitutionForAccount(account);
-                const Icon = institution ? typeIcons[institution.type] : Building2;
-                const metadata = account.metadata as { provider?: string } | null;
-                const providerStyle = providerLabels[metadata?.provider as keyof typeof providerLabels] || providerLabels.plaid;
-                
-                return (
-                  <Card key={account.id} className="border-primary/20 hover:border-primary/40 transition-colors">
-                    <CardContent className="p-4">
-                      <div className="flex items-start justify-between mb-4">
-                        <div className="flex items-center gap-3">
-                          <div className="w-12 h-12 rounded-lg bg-secondary flex items-center justify-center text-2xl">
-                            {institution?.logo || "🏦"}
-                          </div>
-                          <div>
-                            <h3 className="font-semibold">{account.institution_name}</h3>
-                            <div className="flex items-center gap-2">
-                              <Icon className="h-3 w-3 text-muted-foreground" />
-                              <span className="text-xs text-muted-foreground">
-                                {account.institution_type}
-                              </span>
+                  const institution = getInstitutionForAccount(account);
+                  const Icon = institution ? typeIcons[institution.type] : Building2;
+                  const metadata = account.metadata as { provider?: string } | null;
+                  const providerStyle = providerLabels[metadata?.provider as keyof typeof providerLabels] || providerLabels.plaid;
+
+                  return (
+                    <Card key={account.id} className="border-primary/20 hover:border-primary/40 transition-colors">
+                      <CardContent className="p-4">
+                        <div className="flex items-start justify-between mb-4">
+                          <div className="flex items-center gap-3">
+                            <div className="w-12 h-12 rounded-lg bg-secondary flex items-center justify-center text-2xl">
+                              {institution?.logo || "🏦"}
+                            </div>
+                            <div>
+                              <h3 className="font-semibold">{account.institution_name}</h3>
+                              <div className="flex items-center gap-2">
+                                <Icon className="h-3 w-3 text-muted-foreground" />
+                                <span className="text-xs text-muted-foreground">
+                                  {account.institution_type}
+                                </span>
+                              </div>
                             </div>
                           </div>
+                          <Badge variant="outline" className={providerStyle.color}>
+                            {providerStyle.name}
+                          </Badge>
                         </div>
-                        <Badge variant="outline" className={providerStyle.color}>
-                          {providerStyle.name}
-                        </Badge>
-                      </div>
-                      
-                      <div className="mb-3 p-3 rounded-lg bg-secondary/50">
-                        <p className="text-sm text-muted-foreground">Balance</p>
-                        <p className="text-xl font-bold">
-                          ${(account.balance || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                        </p>
-                        {account.account_number_masked && (
-                          <p className="text-xs text-muted-foreground">
-                            Account {account.account_number_masked}
+
+                        <div className="mb-3 p-3 rounded-lg bg-secondary/50">
+                          <p className="text-sm text-muted-foreground">Balance</p>
+                          <p className="text-xl font-bold">
+                            ${(account.balance || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
                           </p>
-                        )}
-                      </div>
-
-                      <div className="flex items-center justify-between mb-3">
-                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                          <Clock className="h-4 w-4" />
-                          <span>
-                            Synced {account.last_synced_at 
-                              ? new Date(account.last_synced_at).toLocaleDateString() 
-                              : 'Never'}
-                          </span>
-                        </div>
-                        <Badge variant="outline" className={account.is_connected ? "border-primary text-primary" : "border-destructive text-destructive"}>
-                          {account.is_connected ? (
-                            <><CheckCircle2 className="h-3 w-3 mr-1" />Active</>
-                          ) : (
-                            <><XCircle className="h-3 w-3 mr-1" />Disconnected</>
+                          {account.account_number_masked && (
+                            <p className="text-xs text-muted-foreground">
+                              Account {account.account_number_masked}
+                            </p>
                           )}
-                        </Badge>
-                      </div>
+                        </div>
 
-                      <div className="flex gap-2">
-                        <Link to={`/account/${account.id}`} className="flex-1">
-                          <Button variant="outline" size="sm" className="w-full">
-                            <Eye className="h-4 w-4 mr-2" />
-                            View
+                        <div className="flex items-center justify-between mb-3">
+                          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                            <Clock className="h-4 w-4" />
+                            <span>
+                              Synced {account.last_synced_at
+                                ? new Date(account.last_synced_at).toLocaleDateString()
+                                : 'Never'}
+                            </span>
+                          </div>
+                          <Badge variant="outline" className={account.is_connected ? "border-primary text-primary" : "border-destructive text-destructive"}>
+                            {account.is_connected ? (
+                              <><CheckCircle2 className="h-3 w-3 mr-1" />Active</>
+                            ) : (
+                              <><XCircle className="h-3 w-3 mr-1" />Disconnected</>
+                            )}
+                          </Badge>
+                        </div>
+
+                        <div className="flex gap-2">
+                          <Link to={`/account/${account.id}`} className="flex-1">
+                            <Button variant="outline" size="sm" className="w-full">
+                              <Eye className="h-4 w-4 mr-2" />
+                              View
+                            </Button>
+                          </Link>
+                          <Button variant="outline" size="sm" onClick={() => handleSync(account.id)}>
+                            <RefreshCw className="h-4 w-4" />
                           </Button>
-                        </Link>
-                        <Button variant="outline" size="sm" onClick={() => handleSync(account.id)}>
-                          <RefreshCw className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleDisconnect(account.id)}
-                          className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                        >
-                          <XCircle className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </CardContent>
-                  </Card>
-                );
-              })}
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleDisconnect(account.id)}
+                            className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                          >
+                            <XCircle className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
             </div>
           )}
         </TabsContent>

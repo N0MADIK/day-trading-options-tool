@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,10 +21,17 @@ import {
   Smartphone,
   Mail,
   DollarSign,
+  Loader2,
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
+import { api } from "@/lib/api";
+import { useAuth } from "@/hooks/useAuth";
 
 export default function Settings() {
+  const { user } = useAuth();
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
   const [notifications, setNotifications] = useState({
     email: true,
     push: false,
@@ -46,11 +53,65 @@ export default function Settings() {
     sessionTimeout: "30",
   });
 
-  const handleSaveNotifications = () => {
-    toast({
-      title: "Notifications Updated",
-      description: "Your notification preferences have been saved.",
-    });
+  // Fetch notification settings from API
+  useEffect(() => {
+    if (!user) {
+      setLoading(false);
+      return;
+    }
+
+    const fetchSettings = async () => {
+      try {
+        const settings = await api.get<{
+          email_notifications?: boolean;
+          push_notifications?: boolean;
+          price_alerts?: boolean;
+          weekly_report?: boolean;
+          market_news?: boolean;
+        }>('/notification-settings').catch(() => null);
+
+        if (settings) {
+          setNotifications({
+            email: settings.email_notifications ?? true,
+            push: settings.push_notifications ?? false,
+            priceAlerts: settings.price_alerts ?? true,
+            weeklyReport: settings.weekly_report ?? true,
+            marketNews: settings.market_news ?? false,
+          });
+        }
+      } catch (error) {
+        console.error('Error fetching notification settings:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchSettings();
+  }, [user]);
+
+  const handleSaveNotifications = async () => {
+    setSaving(true);
+    try {
+      await api.put('/notification-settings', {
+        email_notifications: notifications.email,
+        push_notifications: notifications.push,
+        price_alerts: notifications.priceAlerts,
+        weekly_report: notifications.weeklyReport,
+        market_news: notifications.marketNews,
+      });
+      toast({
+        title: "Notifications Updated",
+        description: "Your notification preferences have been saved.",
+      });
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to save notification settings.",
+        variant: "destructive",
+      });
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleSavePreferences = () => {

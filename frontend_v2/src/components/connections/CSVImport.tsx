@@ -38,7 +38,7 @@ import {
   HelpCircle,
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
-import { supabase } from "@/integrations/supabase/client";
+import { api } from "@/lib/api";
 import { useAuth } from "@/hooks/useAuth";
 
 interface ColumnMapping {
@@ -58,7 +58,7 @@ const accountColumns = ["accountName", "type", "balance", "currency"];
 export function CSVImport({ onImportComplete }: { onImportComplete?: () => void }) {
   const { user } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  
+
   const [dialogOpen, setDialogOpen] = useState(false);
   const [importType, setImportType] = useState<string>("transactions");
   const [file, setFile] = useState<File | null>(null);
@@ -75,11 +75,12 @@ export function CSVImport({ onImportComplete }: { onImportComplete?: () => void 
 
   const fetchAccounts = async () => {
     if (!user) return;
-    const { data } = await supabase
-      .from("connected_accounts")
-      .select("id, institution_name, account_name, metadata")
-      .eq("user_id", user.id);
-    setAccounts(data || []);
+    try {
+      const data = await api.get<any[]>('/connected-accounts');
+      setAccounts(data || []);
+    } catch (error) {
+      console.error('Error fetching accounts:', error);
+    }
   };
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -105,7 +106,7 @@ export function CSVImport({ onImportComplete }: { onImportComplete?: () => void 
     reader.onload = (e) => {
       const text = e.target?.result as string;
       const lines = text.split(/\r?\n/).filter(line => line.trim());
-      
+
       if (lines.length < 2) {
         toast({
           title: "Invalid CSV",
@@ -124,7 +125,7 @@ export function CSVImport({ onImportComplete }: { onImportComplete?: () => void 
       // Auto-detect import type based on columns
       const hasDate = headerRow.some(h => h.toLowerCase().includes('date'));
       const hasTransactionType = headerRow.some(h => h.toLowerCase().includes('transaction type'));
-      
+
       if (hasDate && hasTransactionType) {
         setImportType("transactions");
       }
@@ -133,14 +134,14 @@ export function CSVImport({ onImportComplete }: { onImportComplete?: () => void 
       const mapping: ColumnMapping = {};
       headerRow.forEach((header, index) => {
         const normalized = header.toLowerCase().trim();
-        
+
         // Symbol detection
         if (normalized === "symbol" || normalized === "ticker" || normalized === "stock symbol") {
           mapping.symbol = index.toString();
         }
         // Name detection
-        else if (normalized === "investment name" || normalized === "security name" || 
-                 normalized === "name" || normalized === "security" || normalized === "description") {
+        else if (normalized === "investment name" || normalized === "security name" ||
+          normalized === "name" || normalized === "security" || normalized === "description") {
           if (importType === "transactions") {
             mapping.description = index.toString();
           } else {
@@ -160,24 +161,24 @@ export function CSVImport({ onImportComplete }: { onImportComplete?: () => void 
           mapping.price = index.toString();
         }
         // Value/Amount detection  
-        else if (normalized === "net amount" || normalized === "amount" || normalized === "total" || 
-                 normalized === "value" || normalized === "principal amount" || normalized === "market value") {
+        else if (normalized === "net amount" || normalized === "amount" || normalized === "total" ||
+          normalized === "value" || normalized === "principal amount" || normalized === "market value") {
           mapping.amount = index.toString();
           mapping.value = index.toString();
         }
         // Cost basis detection
-        else if (normalized === "cost basis" || normalized === "basis" || normalized === "cost" || 
-                 normalized === "original cost" || normalized === "average cost") {
+        else if (normalized === "cost basis" || normalized === "basis" || normalized === "cost" ||
+          normalized === "original cost" || normalized === "average cost") {
           mapping.costBasis = index.toString();
         }
         // Type detection
         else if (normalized === "transaction type" || normalized === "type" || normalized === "action" ||
-                 normalized === "trade type" || normalized === "activity") {
+          normalized === "trade type" || normalized === "activity") {
           mapping.type = index.toString();
         }
         // Date detection
         else if (normalized === "trade date" || normalized === "date" || normalized === "transaction date" ||
-                 normalized === "settlement date") {
+          normalized === "settlement date") {
           mapping.date = index.toString();
         }
         // Balance detection
@@ -189,7 +190,7 @@ export function CSVImport({ onImportComplete }: { onImportComplete?: () => void 
           mapping.accountName = index.toString();
         }
       });
-      
+
       setColumnMapping(mapping);
       setStep("mapping");
     };
@@ -234,29 +235,23 @@ export function CSVImport({ onImportComplete }: { onImportComplete?: () => void 
     try {
       // First, create or get the CSV source account
       let accountId: string | null = null;
-      
+
       if (selectedAccountId === "__create_new__") {
         // Create a new CSV import source
-        const { data: newAccount, error: accountError } = await supabase
-          .from("connected_accounts")
-          .insert({
-            user_id: user.id,
-            institution_name: "CSV Import",
-            institution_type: "brokerage",
-            account_name: csvSourceName || file.name.replace('.csv', ''),
-            balance: 0,
-            is_connected: true,
-            connection_status: "manual",
-            metadata: { 
-              source: "csv_import", 
-              imported_at: new Date().toISOString(),
-              file_name: file.name,
-            },
-          })
-          .select()
-          .single();
+        const newAccount = await api.post<{ id: string }>('/connected-accounts', {
+          institution_name: "CSV Import",
+          institution_type: "brokerage",
+          account_name: csvSourceName || file.name.replace('.csv', ''),
+          balance: 0,
+          is_connected: true,
+          connection_status: "manual",
+          metadata: {
+            source: "csv_import",
+            imported_at: new Date().toISOString(),
+            file_name: file.name,
+          },
+        });
 
-        if (accountError) throw accountError;
         accountId = newAccount.id;
       } else if (selectedAccountId !== "__none__") {
         accountId = selectedAccountId;
@@ -265,14 +260,14 @@ export function CSVImport({ onImportComplete }: { onImportComplete?: () => void 
       const text = await file.text();
       const lines = text.split(/\r?\n/).filter(line => line.trim());
       const dataLines = lines.slice(1).filter(line => line.trim());
-      
+
       let successCount = 0;
       let failCount = 0;
       let totalBalance = 0;
 
       for (let i = 0; i < dataLines.length; i++) {
         const values = parseCSVLine(dataLines[i]);
-        
+
         try {
           if (importType === "holdings") {
             const result = await importHolding(values, accountId);
@@ -295,10 +290,7 @@ export function CSVImport({ onImportComplete }: { onImportComplete?: () => void 
 
       // Update the account balance if we created a new account
       if (accountId && totalBalance > 0) {
-        await supabase
-          .from("connected_accounts")
-          .update({ balance: totalBalance })
-          .eq("id", accountId);
+        await api.put(`/connected-accounts/${accountId}`, { balance: totalBalance });
       }
 
       setImportResults({ success: successCount, failed: failCount });
@@ -323,7 +315,7 @@ export function CSVImport({ onImportComplete }: { onImportComplete?: () => void 
 
   const importHolding = async (values: string[], accountId: string | null) => {
     if (!user) return null;
-    
+
     const symbol = values[parseInt(columnMapping.symbol || "-1")] || "";
     const name = values[parseInt(columnMapping.name || columnMapping.description || "-1")] || symbol;
     const quantity = parseFloat(values[parseInt(columnMapping.quantity || "-1")] || "0");
@@ -334,8 +326,7 @@ export function CSVImport({ onImportComplete }: { onImportComplete?: () => void 
 
     if (!symbol || quantity === 0) return null;
 
-    const { error } = await supabase.from("holdings").insert({
-      user_id: user.id,
+    await api.post('/holdings', {
       account_id: accountId,
       symbol: symbol.toUpperCase().trim(),
       name: name.trim(),
@@ -348,13 +339,12 @@ export function CSVImport({ onImportComplete }: { onImportComplete?: () => void 
       unrealized_pnl_percent: costBasis > 0 ? ((value - costBasis) / costBasis) * 100 : 0,
     });
 
-    if (error) throw error;
     return { value: Math.abs(value) };
   };
 
   const importTransaction = async (values: string[], accountId: string | null) => {
     if (!user) return;
-    
+
     const dateStr = values[parseInt(columnMapping.date || "-1")] || new Date().toISOString();
     const symbol = values[parseInt(columnMapping.symbol || "-1")] || null;
     const rawType = values[parseInt(columnMapping.type || "-1")] || "";
@@ -402,8 +392,7 @@ export function CSVImport({ onImportComplete }: { onImportComplete?: () => void 
       parsedDate = new Date();
     }
 
-    const { error } = await supabase.from("transactions").insert({
-      user_id: user.id,
+    await api.post('/transactions', {
       account_id: accountId,
       transaction_date: parsedDate.toISOString(),
       symbol: symbol?.toUpperCase().trim() || null,
@@ -413,20 +402,17 @@ export function CSVImport({ onImportComplete }: { onImportComplete?: () => void 
       total_amount: amount,
       description: description.trim(),
     });
-
-    if (error) throw error;
   };
 
   const importAccount = async (values: string[]) => {
     if (!user) return;
-    
+
     const accountName = values[parseInt(columnMapping.accountName || "0")] || "Imported Account";
     const type = values[parseInt(columnMapping.type || "1")] || "brokerage";
     const balance = parseFloat(values[parseInt(columnMapping.balance || "2")] || "0");
     const currency = values[parseInt(columnMapping.currency || "3")] || "USD";
 
-    const { error } = await supabase.from("connected_accounts").insert({
-      user_id: user.id,
+    await api.post('/connected-accounts', {
       institution_name: "CSV Import",
       institution_type: type.toLowerCase(),
       account_name: accountName,
@@ -436,8 +422,6 @@ export function CSVImport({ onImportComplete }: { onImportComplete?: () => void 
       connection_status: "manual",
       metadata: { source: "csv_import", imported_at: new Date().toISOString() },
     });
-
-    if (error) throw error;
   };
 
   const resetImport = () => {
@@ -609,7 +593,7 @@ export function CSVImport({ onImportComplete }: { onImportComplete?: () => void 
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="__unmapped__">Not mapped</SelectItem>
-                          {headers.map((header, idx) => 
+                          {headers.map((header, idx) =>
                             header.trim() ? (
                               <SelectItem key={idx} value={idx.toString()}>
                                 {header}

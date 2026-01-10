@@ -12,7 +12,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { useConnections } from "@/hooks/useConnections";
 import { useMockData, MOCK_DATA } from "@/hooks/useMockData";
-import { supabase } from "@/integrations/supabase/client";
+import { api } from "@/lib/api";
 import { DataPlaceholder } from "@/components/ui/DataPlaceholder";
 import {
   AreaChart,
@@ -72,7 +72,7 @@ export default function FinancialBreakdown() {
   const { user } = useAuth();
   const { accounts, holdings, transactions, totalNetWorth, loading } = useConnections();
   const { showMockData } = useMockData();
-  
+
   const [goalAmount, setGoalAmount] = useState("500000");
   const [goalDate, setGoalDate] = useState("2030-12-31");
   const [notifyOnProgress, setNotifyOnProgress] = useState(true);
@@ -83,8 +83,8 @@ export default function FinancialBreakdown() {
   const [netWorthGoal, setNetWorthGoal] = useState<any>(null);
 
   // Check for credit card accounts
-  const hasCreditCardAccount = showMockData 
-    ? true 
+  const hasCreditCardAccount = showMockData
+    ? true
     : accounts.some(acc => acc.institution_type === 'credit_card' || acc.institution_type === 'credit');
 
   // Use mock data if toggle is on
@@ -93,260 +93,266 @@ export default function FinancialBreakdown() {
   const hasTransactions = showMockData || transactions.length > 0;
   const displayNetWorth = showMockData ? MOCK_DATA.totalNetWorth : totalNetWorth;
 
-  // Fetch net worth goal from database
+  // Fetch net worth goal from API
   useEffect(() => {
     if (!user) return;
-    
+
     const fetchGoal = async () => {
-      const { data } = await supabase
-        .from('net_worth_goals')
-        .select('*')
-        .eq('user_id', user.id)
-        .maybeSingle();
-      
-      if (data) {
-        setNetWorthGoal(data);
-        setGoalAmount(data.target_amount.toString());
-        setGoalDate(data.target_date?.split('T')[0] || '2030-12-31');
-        setNotifyOnProgress(data.notify_on_progress || true);
-        setNotifyThreshold((data.notify_threshold_percent || 5).toString());
+      try {
+        const data = await api.get<{
+          id: string;
+          target_amount: number;
+          target_date?: string;
+          notify_on_progress?: boolean;
+          notify_threshold_percent?: number;
+        }>('/net-worth/goal').catch(() => null);
+
+        if (data) {
+          setNetWorthGoal(data);
+          setGoalAmount(data.target_amount.toString());
+          setGoalDate(data.target_date?.split('T')[0] || '2030-12-31');
+          setNotifyOnProgress(data.notify_on_progress || true);
+          setNotifyThreshold((data.notify_threshold_percent || 5).toString());
+        }
+      } catch (error) {
+        console.error('Error fetching net worth goal:', error);
       }
     };
-    
+
     fetchGoal();
   }, [user]);
 
   // Account breakdown (mock or real)
-  const accountBreakdown = showMockData 
+  const accountBreakdown = showMockData
     ? MOCK_DATA.accountBreakdown
     : accounts.map((acc, idx) => {
-        const colors = [
-          "hsl(142, 71%, 45%)",
-          "hsl(173, 58%, 39%)",
-          "hsl(197, 37%, 24%)",
-          "hsl(38, 92%, 50%)",
-          "hsl(280, 60%, 50%)",
-          "hsl(0, 72%, 51%)",
-        ];
-        return {
-          name: acc.institution_name,
-          value: Math.abs(acc.balance || 0),
-          type: acc.institution_type,
-          color: colors[idx % colors.length],
-        };
-      });
+      const colors = [
+        "hsl(142, 71%, 45%)",
+        "hsl(173, 58%, 39%)",
+        "hsl(197, 37%, 24%)",
+        "hsl(38, 92%, 50%)",
+        "hsl(280, 60%, 50%)",
+        "hsl(0, 72%, 51%)",
+      ];
+      return {
+        name: acc.institution_name,
+        value: Math.abs(acc.balance || 0),
+        type: acc.institution_type,
+        color: colors[idx % colors.length],
+      };
+    });
 
   // Spending by category (mock or real) - improved categorization
-  const spendingByCategory = showMockData 
+  const spendingByCategory = showMockData
     ? MOCK_DATA.spendingByCategory
     : (() => {
-        if (transactions.length === 0) return [];
-        
-        // Define category mapping based on keywords
-        const categoryKeywords: Record<string, { keywords: string[]; color: string; icon: string }> = {
-          "Subscriptions": { keywords: ["netflix", "spotify", "amazon prime", "adobe", "openai", "chatgpt", "youtube premium", "icloud", "hulu", "disney"], color: "hsl(262, 83%, 58%)", icon: "subscription" },
-          "Housing": { keywords: ["rent", "mortgage", "hoa", "property"], color: "hsl(220, 70%, 50%)", icon: "home" },
-          "Food": { keywords: ["whole foods", "trader joe", "grocery", "safeway", "kroger", "restaurant", "doordash", "uber eats", "grubhub", "chipotle", "mcdonald"], color: "hsl(38, 92%, 50%)", icon: "food" },
-          "Transportation": { keywords: ["gas", "shell", "chevron", "uber", "lyft", "parking", "toll"], color: "hsl(280, 60%, 50%)", icon: "car" },
-          "Shopping": { keywords: ["amazon", "target", "walmart", "costco", "best buy", "apple store"], color: "hsl(142, 71%, 45%)", icon: "shopping" },
-          "Entertainment": { keywords: ["movie", "theater", "concert", "ticket", "game"], color: "hsl(0, 72%, 51%)", icon: "entertainment" },
-          "Utilities": { keywords: ["electric", "water", "gas bill", "internet", "phone", "verizon", "att", "comcast"], color: "hsl(173, 58%, 39%)", icon: "utilities" },
-          "Coffee": { keywords: ["starbucks", "dunkin", "coffee", "cafe"], color: "hsl(25, 95%, 53%)", icon: "coffee" },
-        };
-        
-        const categoryMap: Record<string, { amount: number; count: number; color: string; icon: string }> = {};
-        
-        transactions
-          .filter(t => t.transaction_type === 'withdrawal' || t.transaction_type === 'expense' || t.total_amount < 0)
-          .forEach((t) => {
-            const description = (t.description || '').toLowerCase();
-            let matchedCategory = 'Other';
-            let matchedData = { color: "hsl(220, 15%, 50%)", icon: "other" };
-            
-            for (const [category, data] of Object.entries(categoryKeywords)) {
-              if (data.keywords.some(keyword => description.includes(keyword))) {
-                matchedCategory = category;
-                matchedData = data;
-                break;
-              }
+      if (transactions.length === 0) return [];
+
+      // Define category mapping based on keywords
+      const categoryKeywords: Record<string, { keywords: string[]; color: string; icon: string }> = {
+        "Subscriptions": { keywords: ["netflix", "spotify", "amazon prime", "adobe", "openai", "chatgpt", "youtube premium", "icloud", "hulu", "disney"], color: "hsl(262, 83%, 58%)", icon: "subscription" },
+        "Housing": { keywords: ["rent", "mortgage", "hoa", "property"], color: "hsl(220, 70%, 50%)", icon: "home" },
+        "Food": { keywords: ["whole foods", "trader joe", "grocery", "safeway", "kroger", "restaurant", "doordash", "uber eats", "grubhub", "chipotle", "mcdonald"], color: "hsl(38, 92%, 50%)", icon: "food" },
+        "Transportation": { keywords: ["gas", "shell", "chevron", "uber", "lyft", "parking", "toll"], color: "hsl(280, 60%, 50%)", icon: "car" },
+        "Shopping": { keywords: ["amazon", "target", "walmart", "costco", "best buy", "apple store"], color: "hsl(142, 71%, 45%)", icon: "shopping" },
+        "Entertainment": { keywords: ["movie", "theater", "concert", "ticket", "game"], color: "hsl(0, 72%, 51%)", icon: "entertainment" },
+        "Utilities": { keywords: ["electric", "water", "gas bill", "internet", "phone", "verizon", "att", "comcast"], color: "hsl(173, 58%, 39%)", icon: "utilities" },
+        "Coffee": { keywords: ["starbucks", "dunkin", "coffee", "cafe"], color: "hsl(25, 95%, 53%)", icon: "coffee" },
+      };
+
+      const categoryMap: Record<string, { amount: number; count: number; color: string; icon: string }> = {};
+
+      transactions
+        .filter(t => t.transaction_type === 'withdrawal' || t.transaction_type === 'expense' || t.total_amount < 0)
+        .forEach((t) => {
+          const description = (t.description || '').toLowerCase();
+          let matchedCategory = 'Other';
+          let matchedData = { color: "hsl(220, 15%, 50%)", icon: "other" };
+
+          for (const [category, data] of Object.entries(categoryKeywords)) {
+            if (data.keywords.some(keyword => description.includes(keyword))) {
+              matchedCategory = category;
+              matchedData = data;
+              break;
             }
-            
-            if (!categoryMap[matchedCategory]) {
-              categoryMap[matchedCategory] = { amount: 0, count: 0, color: matchedData.color, icon: matchedData.icon };
-            }
-            categoryMap[matchedCategory].amount += Math.abs(t.total_amount);
-            categoryMap[matchedCategory].count += 1;
-          });
-        
-        return Object.entries(categoryMap)
-          .map(([category, data]) => ({ category, ...data }))
-          .sort((a, b) => b.amount - a.amount)
-          .slice(0, 8);
-      })();
+          }
+
+          if (!categoryMap[matchedCategory]) {
+            categoryMap[matchedCategory] = { amount: 0, count: 0, color: matchedData.color, icon: matchedData.icon };
+          }
+          categoryMap[matchedCategory].amount += Math.abs(t.total_amount);
+          categoryMap[matchedCategory].count += 1;
+        });
+
+      return Object.entries(categoryMap)
+        .map(([category, data]) => ({ category, ...data }))
+        .sort((a, b) => b.amount - a.amount)
+        .slice(0, 8);
+    })();
 
   // Subscriptions (mock or detected from transactions)
-  const subscriptions = showMockData 
+  const subscriptions = showMockData
     ? MOCK_DATA.subscriptions
     : (() => {
-        if (transactions.length === 0) return [];
-        
-        // Common subscription services to detect
-        const knownSubscriptions: Record<string, { website: string; logo: string; category: string }> = {
-          "netflix": { website: "https://netflix.com", logo: "🎬", category: "Entertainment" },
-          "spotify": { website: "https://spotify.com", logo: "🎵", category: "Entertainment" },
-          "amazon prime": { website: "https://amazon.com/prime", logo: "📦", category: "Shopping" },
-          "adobe": { website: "https://adobe.com", logo: "🎨", category: "Software" },
-          "openai": { website: "https://openai.com", logo: "🤖", category: "Software" },
-          "chatgpt": { website: "https://openai.com", logo: "🤖", category: "Software" },
-          "youtube premium": { website: "https://youtube.com/premium", logo: "▶️", category: "Entertainment" },
-          "icloud": { website: "https://icloud.com", logo: "☁️", category: "Cloud Storage" },
-          "hulu": { website: "https://hulu.com", logo: "📺", category: "Entertainment" },
-          "disney": { website: "https://disneyplus.com", logo: "🏰", category: "Entertainment" },
-          "apple music": { website: "https://music.apple.com", logo: "🎵", category: "Entertainment" },
-          "dropbox": { website: "https://dropbox.com", logo: "📁", category: "Cloud Storage" },
-          "microsoft 365": { website: "https://microsoft.com", logo: "💼", category: "Software" },
-          "gym": { website: "#", logo: "🏋️", category: "Health" },
-          "planet fitness": { website: "https://planetfitness.com", logo: "🏋️", category: "Health" },
-        };
-        
-        const detected: typeof MOCK_DATA.subscriptions = [];
-        const seenVendors = new Set<string>();
-        
-        transactions
-          .filter(t => t.total_amount < 0)
-          .forEach(t => {
-            const description = (t.description || '').toLowerCase();
-            
-            for (const [keyword, data] of Object.entries(knownSubscriptions)) {
-              if (description.includes(keyword) && !seenVendors.has(keyword)) {
-                seenVendors.add(keyword);
-                detected.push({
-                  id: t.id,
-                  name: keyword.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' '),
-                  amount: Math.abs(t.total_amount),
-                  billingCycle: "monthly",
-                  category: data.category,
-                  lastCharge: t.transaction_date,
-                  website: data.website,
-                  logo: data.logo,
-                });
-                break;
-              }
+      if (transactions.length === 0) return [];
+
+      // Common subscription services to detect
+      const knownSubscriptions: Record<string, { website: string; logo: string; category: string }> = {
+        "netflix": { website: "https://netflix.com", logo: "🎬", category: "Entertainment" },
+        "spotify": { website: "https://spotify.com", logo: "🎵", category: "Entertainment" },
+        "amazon prime": { website: "https://amazon.com/prime", logo: "📦", category: "Shopping" },
+        "adobe": { website: "https://adobe.com", logo: "🎨", category: "Software" },
+        "openai": { website: "https://openai.com", logo: "🤖", category: "Software" },
+        "chatgpt": { website: "https://openai.com", logo: "🤖", category: "Software" },
+        "youtube premium": { website: "https://youtube.com/premium", logo: "▶️", category: "Entertainment" },
+        "icloud": { website: "https://icloud.com", logo: "☁️", category: "Cloud Storage" },
+        "hulu": { website: "https://hulu.com", logo: "📺", category: "Entertainment" },
+        "disney": { website: "https://disneyplus.com", logo: "🏰", category: "Entertainment" },
+        "apple music": { website: "https://music.apple.com", logo: "🎵", category: "Entertainment" },
+        "dropbox": { website: "https://dropbox.com", logo: "📁", category: "Cloud Storage" },
+        "microsoft 365": { website: "https://microsoft.com", logo: "💼", category: "Software" },
+        "gym": { website: "#", logo: "🏋️", category: "Health" },
+        "planet fitness": { website: "https://planetfitness.com", logo: "🏋️", category: "Health" },
+      };
+
+      const detected: typeof MOCK_DATA.subscriptions = [];
+      const seenVendors = new Set<string>();
+
+      transactions
+        .filter(t => t.total_amount < 0)
+        .forEach(t => {
+          const description = (t.description || '').toLowerCase();
+
+          for (const [keyword, data] of Object.entries(knownSubscriptions)) {
+            if (description.includes(keyword) && !seenVendors.has(keyword)) {
+              seenVendors.add(keyword);
+              detected.push({
+                id: t.id,
+                name: keyword.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' '),
+                amount: Math.abs(t.total_amount),
+                billingCycle: "monthly",
+                category: data.category,
+                lastCharge: t.transaction_date,
+                website: data.website,
+                logo: data.logo,
+              });
+              break;
             }
-          });
-        
-        return detected;
-      })();
+          }
+        });
+
+      return detected;
+    })();
 
   // Frequent vendors from transactions
-  const frequentVendors = showMockData 
+  const frequentVendors = showMockData
     ? MOCK_DATA.frequentVendors
     : (() => {
-        if (transactions.length === 0) return [];
-        
-        const vendorMap: Record<string, { count: number; totalSpent: number }> = {};
-        
-        transactions
-          .filter(t => t.total_amount < 0)
-          .forEach(t => {
-            const vendor = t.description?.split(' ')[0] || 'Unknown';
-            if (!vendorMap[vendor]) {
-              vendorMap[vendor] = { count: 0, totalSpent: 0 };
-            }
-            vendorMap[vendor].count += 1;
-            vendorMap[vendor].totalSpent += Math.abs(t.total_amount);
-          });
-        
-        return Object.entries(vendorMap)
-          .map(([name, data]) => ({ 
-            name, 
-            count: data.count, 
-            totalSpent: data.totalSpent, 
-            avgTransaction: data.totalSpent / data.count 
-          }))
-          .sort((a, b) => b.count - a.count)
-          .slice(0, 5);
-      })();
+      if (transactions.length === 0) return [];
+
+      const vendorMap: Record<string, { count: number; totalSpent: number }> = {};
+
+      transactions
+        .filter(t => t.total_amount < 0)
+        .forEach(t => {
+          const vendor = t.description?.split(' ')[0] || 'Unknown';
+          if (!vendorMap[vendor]) {
+            vendorMap[vendor] = { count: 0, totalSpent: 0 };
+          }
+          vendorMap[vendor].count += 1;
+          vendorMap[vendor].totalSpent += Math.abs(t.total_amount);
+        });
+
+      return Object.entries(vendorMap)
+        .map(([name, data]) => ({
+          name,
+          count: data.count,
+          totalSpent: data.totalSpent,
+          avgTransaction: data.totalSpent / data.count
+        }))
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 5);
+    })();
 
   // Year-over-year spending comparison data
-  const yearOverYearSpending = showMockData 
+  const yearOverYearSpending = showMockData
     ? MOCK_DATA.yearOverYearSpending
     : (() => {
-        if (transactions.length === 0) return [];
-        
-        const currentYear = new Date().getFullYear();
-        const previousYear = currentYear - 1;
-        
-        const monthlyData: Record<number, { currentYear: number; previousYear: number }> = {};
-        
-        // Initialize all months
-        for (let i = 0; i < 12; i++) {
-          monthlyData[i] = { currentYear: 0, previousYear: 0 };
-        }
-        
-        transactions
-          .filter(t => t.total_amount < 0)
-          .forEach(t => {
-            const date = new Date(t.transaction_date);
-            const year = date.getFullYear();
-            const month = date.getMonth();
-            
-            if (year === currentYear) {
-              monthlyData[month].currentYear += Math.abs(t.total_amount);
-            } else if (year === previousYear) {
-              monthlyData[month].previousYear += Math.abs(t.total_amount);
-            }
-          });
-        
-        const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-        
-        return months.map((month, idx) => ({
-          month,
-          currentYear: Math.round(monthlyData[idx].currentYear),
-          previousYear: Math.round(monthlyData[idx].previousYear),
-          percentChange: monthlyData[idx].previousYear > 0 
-            ? ((monthlyData[idx].currentYear - monthlyData[idx].previousYear) / monthlyData[idx].previousYear) * 100
-            : 0,
-        }));
-      })();
+      if (transactions.length === 0) return [];
+
+      const currentYear = new Date().getFullYear();
+      const previousYear = currentYear - 1;
+
+      const monthlyData: Record<number, { currentYear: number; previousYear: number }> = {};
+
+      // Initialize all months
+      for (let i = 0; i < 12; i++) {
+        monthlyData[i] = { currentYear: 0, previousYear: 0 };
+      }
+
+      transactions
+        .filter(t => t.total_amount < 0)
+        .forEach(t => {
+          const date = new Date(t.transaction_date);
+          const year = date.getFullYear();
+          const month = date.getMonth();
+
+          if (year === currentYear) {
+            monthlyData[month].currentYear += Math.abs(t.total_amount);
+          } else if (year === previousYear) {
+            monthlyData[month].previousYear += Math.abs(t.total_amount);
+          }
+        });
+
+      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+      return months.map((month, idx) => ({
+        month,
+        currentYear: Math.round(monthlyData[idx].currentYear),
+        previousYear: Math.round(monthlyData[idx].previousYear),
+        percentChange: monthlyData[idx].previousYear > 0
+          ? ((monthlyData[idx].currentYear - monthlyData[idx].previousYear) / monthlyData[idx].previousYear) * 100
+          : 0,
+      }));
+    })();
 
   // Category YoY comparison
-  const categoryYoYComparison = showMockData 
+  const categoryYoYComparison = showMockData
     ? MOCK_DATA.categoryYoYComparison
     : [];
 
   // Net worth history (mock or real)
-  const netWorthHistory = showMockData 
+  const netWorthHistory = showMockData
     ? MOCK_DATA.netWorthHistory
     : (() => {
-        if (accounts.length === 0) return [];
-        
-        const months = ['Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-        const baseValue = totalNetWorth * 0.7;
-        const growth = (totalNetWorth - baseValue) / 6;
-        
-        return months.map((month, idx) => ({
-          month,
-          netWorth: Math.round(baseValue + growth * idx),
-          assets: Math.round((baseValue + growth * idx) * 1.1),
-          liabilities: Math.round((baseValue + growth * idx) * 0.1),
-        }));
-      })();
+      if (accounts.length === 0) return [];
+
+      const months = ['Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      const baseValue = totalNetWorth * 0.7;
+      const growth = (totalNetWorth - baseValue) / 6;
+
+      return months.map((month, idx) => ({
+        month,
+        netWorth: Math.round(baseValue + growth * idx),
+        assets: Math.round((baseValue + growth * idx) * 1.1),
+        liabilities: Math.round((baseValue + growth * idx) * 0.1),
+      }));
+    })();
 
   // Recent transactions (mock or real)
-  const recentTransactions = showMockData 
+  const recentTransactions = showMockData
     ? MOCK_DATA.recentTransactions
     : (transactions.length > 0
-        ? transactions.slice(0, 5).map(tx => ({
-            id: tx.id,
-            type: tx.transaction_type,
-            symbol: tx.symbol,
-            amount: tx.total_amount,
-            date: new Date(tx.transaction_date).toLocaleDateString(),
-            account: accounts.find(a => a.id === tx.account_id)?.institution_name || 'Unknown',
-            vendor: tx.description,
-          }))
-        : []);
+      ? transactions.slice(0, 5).map(tx => ({
+        id: tx.id,
+        type: tx.transaction_type,
+        symbol: tx.symbol,
+        amount: tx.total_amount,
+        date: new Date(tx.transaction_date).toLocaleDateString(),
+        account: accounts.find(a => a.id === tx.account_id)?.institution_name || 'Unknown',
+        vendor: tx.description,
+      }))
+      : []);
 
   const currentNetWorth = displayNetWorth;
   const targetNetWorth = parseFloat(goalAmount) || 500000;
@@ -355,11 +361,11 @@ export default function FinancialBreakdown() {
 
   // P&L (mock or real)
   const totalPnL = showMockData ? MOCK_DATA.totalPnL : holdings.reduce((sum, h) => sum + (h.unrealized_pnl || 0), 0);
-  const totalPnLPercent = showMockData 
-    ? MOCK_DATA.totalPnLPercent 
-    : (holdings.length > 0 
-        ? holdings.reduce((sum, h) => sum + (h.unrealized_pnl_percent || 0), 0) / holdings.length 
-        : 0);
+  const totalPnLPercent = showMockData
+    ? MOCK_DATA.totalPnLPercent
+    : (holdings.length > 0
+      ? holdings.reduce((sum, h) => sum + (h.unrealized_pnl_percent || 0), 0) / holdings.length
+      : 0);
 
   const totalSpending = showMockData ? MOCK_DATA.totalSpending : spendingByCategory.reduce((sum, cat) => sum + cat.amount, 0);
   const totalSubscriptionCost = subscriptions.reduce((sum, sub) => sum + sub.amount, 0);
@@ -369,24 +375,14 @@ export default function FinancialBreakdown() {
 
     try {
       const goalData = {
-        user_id: user.id,
         target_amount: parseFloat(goalAmount),
         target_date: goalDate,
         notify_on_progress: notifyOnProgress,
         notify_threshold_percent: parseFloat(notifyThreshold),
       };
 
-      if (netWorthGoal) {
-        await supabase
-          .from('net_worth_goals')
-          .update(goalData)
-          .eq('id', netWorthGoal.id);
-      } else {
-        const { data } = await supabase
-          .from('net_worth_goals')
-          .insert(goalData)
-          .select()
-          .single();
+      const data = await api.put<{ id: string }>('/net-worth/goal', goalData);
+      if (data) {
         setNetWorthGoal(data);
       }
 
@@ -940,7 +936,7 @@ export default function FinancialBreakdown() {
                 </div>
               )}
             </div>
-            
+
             {/* Category breakdown list */}
             <div className="space-y-3">
               <h4 className="font-medium text-foreground">By Category</h4>
@@ -983,7 +979,7 @@ export default function FinancialBreakdown() {
                 Subscription Scanner
               </CardTitle>
               <CardDescription>
-                {hasCreditCardAccount 
+                {hasCreditCardAccount
                   ? "Detected recurring payments from your connected accounts"
                   : "Connect a credit card to detect subscriptions"
                 }
@@ -1014,9 +1010,9 @@ export default function FinancialBreakdown() {
                       <p className="font-semibold text-foreground">${sub.amount.toFixed(2)}</p>
                       <p className="text-xs text-muted-foreground">/{sub.billingCycle}</p>
                     </div>
-                    <a 
-                      href={sub.website} 
-                      target="_blank" 
+                    <a
+                      href={sub.website}
+                      target="_blank"
                       rel="noopener noreferrer"
                       className="p-1.5 rounded-md hover:bg-secondary transition-colors"
                     >
@@ -1029,7 +1025,7 @@ export default function FinancialBreakdown() {
           ) : (
             <DataPlaceholder
               title={hasCreditCardAccount ? "No Subscriptions Detected" : "No Credit Card Connected"}
-              description={hasCreditCardAccount 
+              description={hasCreditCardAccount
                 ? "We couldn't find any recurring payments in your transactions"
                 : "Connect a credit card to automatically detect recurring subscriptions"
               }
@@ -1129,7 +1125,7 @@ export default function FinancialBreakdown() {
                       name === "currentYear" ? new Date().getFullYear().toString() : (new Date().getFullYear() - 1).toString()
                     ]}
                   />
-                  <Legend 
+                  <Legend
                     formatter={(value) => value === "currentYear" ? new Date().getFullYear() : new Date().getFullYear() - 1}
                   />
                   <Area
@@ -1188,17 +1184,15 @@ export default function FinancialBreakdown() {
                         <div key={index} className="p-4 rounded-lg bg-secondary/50 border border-border/50">
                           <div className="flex items-center justify-between mb-2">
                             <p className="font-medium text-foreground">{cat.category}</p>
-                            <div className={`flex items-center gap-1 px-2 py-0.5 rounded-full ${
-                              isIncrease ? 'bg-destructive/10' : isDecrease ? 'bg-primary/10' : 'bg-muted'
-                            }`}>
+                            <div className={`flex items-center gap-1 px-2 py-0.5 rounded-full ${isIncrease ? 'bg-destructive/10' : isDecrease ? 'bg-primary/10' : 'bg-muted'
+                              }`}>
                               {isIncrease ? (
                                 <ArrowUpRight className="h-3 w-3 text-destructive" />
                               ) : isDecrease ? (
                                 <ArrowDownRight className="h-3 w-3 text-primary" />
                               ) : null}
-                              <span className={`text-xs font-medium ${
-                                isIncrease ? 'text-destructive' : isDecrease ? 'text-primary' : 'text-muted-foreground'
-                              }`}>
+                              <span className={`text-xs font-medium ${isIncrease ? 'text-destructive' : isDecrease ? 'text-primary' : 'text-muted-foreground'
+                                }`}>
                                 {cat.percentChange > 0 ? '+' : ''}{cat.percentChange.toFixed(1)}%
                               </span>
                             </div>
@@ -1283,13 +1277,12 @@ export default function FinancialBreakdown() {
                 {recentTransactions.map((tx) => (
                   <div key={tx.id} className="flex items-center justify-between p-3 rounded-lg bg-secondary/50">
                     <div className="flex items-center gap-3">
-                      <div className={`p-2 rounded-lg ${
-                        tx.type === "buy" || tx.type === "deposit" 
-                          ? "bg-primary/10" 
+                      <div className={`p-2 rounded-lg ${tx.type === "buy" || tx.type === "deposit"
+                          ? "bg-primary/10"
                           : tx.type === "sell" || tx.type === "withdrawal"
-                          ? "bg-destructive/10"
-                          : "bg-secondary"
-                      }`}>
+                            ? "bg-destructive/10"
+                            : "bg-secondary"
+                        }`}>
                         {tx.type === "buy" || tx.type === "deposit" ? (
                           <ArrowDown className="h-4 w-4 text-primary" />
                         ) : tx.type === "sell" || tx.type === "withdrawal" ? (

@@ -31,7 +31,7 @@ import {
 import { useAuth } from "@/hooks/useAuth";
 import { useConnections } from "@/hooks/useConnections";
 import { useMockData, MOCK_DATA } from "@/hooks/useMockData";
-import { supabase } from "@/integrations/supabase/client";
+import { api } from "@/lib/api";
 import { DataPlaceholder } from "@/components/ui/DataPlaceholder";
 
 export default function Dashboard() {
@@ -54,18 +54,19 @@ export default function Dashboard() {
   const hasTransactions = showMockData || transactions.length > 0;
   const displayNetWorth = showMockData ? MOCK_DATA.totalNetWorth : totalNetWorth;
 
-  // Fetch notification settings and strategies from database
+  // Fetch notification settings and strategies from API
   useEffect(() => {
     if (!user) return;
 
     const fetchData = async () => {
       try {
         // Fetch notification settings
-        const { data: settings } = await supabase
-          .from('notification_settings')
-          .select('*')
-          .eq('user_id', user.id)
-          .maybeSingle();
+        const settings = await api.get<{
+          price_alerts?: boolean;
+          email_notifications?: boolean;
+          goal_progress_alerts?: boolean;
+          daily_summary?: boolean;
+        }>('/notification-settings').catch(() => null);
 
         if (settings) {
           setNotificationSettings({
@@ -77,13 +78,7 @@ export default function Dashboard() {
         }
 
         // Fetch trading strategies
-        const { data: strats } = await supabase
-          .from('trading_strategies')
-          .select('*')
-          .eq('user_id', user.id)
-          .order('created_at', { ascending: false })
-          .limit(4);
-
+        const strats = await api.get<any[]>('/trading-strategies').catch(() => []);
         setStrategies(strats || []);
       } catch (error) {
         console.error('Error fetching dashboard data:', error);
@@ -95,7 +90,7 @@ export default function Dashboard() {
     fetchData();
   }, [user]);
 
-  // Update notification settings in database
+  // Update notification settings via API
   const updateNotificationSetting = async (key: string, value: boolean) => {
     if (!user) return;
 
@@ -108,84 +103,85 @@ export default function Dashboard() {
       dailySummary: 'daily_summary',
     };
 
-    await supabase
-      .from('notification_settings')
-      .update({ [columnMap[key]]: value })
-      .eq('user_id', user.id);
+    try {
+      await api.put('/notification-settings', { [columnMap[key]]: value });
+    } catch (error) {
+      console.error('Error updating notification setting:', error);
+    }
   };
 
   // Generate portfolio chart data (mock or real)
-  const portfolioData = showMockData 
-    ? MOCK_DATA.portfolioData 
+  const portfolioData = showMockData
+    ? MOCK_DATA.portfolioData
     : (() => {
-        if (accounts.length === 0) return [];
-        
-        const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-        const baseValue = totalNetWorth > 0 ? totalNetWorth * 0.6 : 0;
-        const growth = totalNetWorth > 0 ? (totalNetWorth - baseValue) / 12 : 0;
-        
-        return months.map((month, idx) => ({
-          date: month,
-          value: Math.round(baseValue + (growth * idx) + (Math.random() - 0.5) * growth * 0.5),
-        }));
-      })();
+      if (accounts.length === 0) return [];
+
+      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      const baseValue = totalNetWorth > 0 ? totalNetWorth * 0.6 : 0;
+      const growth = totalNetWorth > 0 ? (totalNetWorth - baseValue) / 12 : 0;
+
+      return months.map((month, idx) => ({
+        date: month,
+        value: Math.round(baseValue + (growth * idx) + (Math.random() - 0.5) * growth * 0.5),
+      }));
+    })();
 
   // Get recent trades (mock or real)
-  const recentTrades = showMockData 
+  const recentTrades = showMockData
     ? MOCK_DATA.recentTrades
     : (transactions.length > 0
-        ? transactions
-            .filter(t => t.symbol && (t.transaction_type === 'buy' || t.transaction_type === 'sell'))
-            .slice(0, 5)
-            .map(t => ({
-              id: t.id,
-              symbol: t.symbol || '',
-              type: t.transaction_type.toUpperCase(),
-              shares: t.quantity || 0,
-              price: t.price || 0,
-              time: new Date(t.transaction_date).toLocaleDateString(),
-            }))
-        : []);
+      ? transactions
+        .filter(t => t.symbol && (t.transaction_type === 'buy' || t.transaction_type === 'sell'))
+        .slice(0, 5)
+        .map(t => ({
+          id: t.id,
+          symbol: t.symbol || '',
+          type: t.transaction_type.toUpperCase(),
+          shares: t.quantity || 0,
+          price: t.price || 0,
+          time: new Date(t.transaction_date).toLocaleDateString(),
+        }))
+      : []);
 
   // Get previous trades for table (mock or real)
-  const previousTrades = showMockData 
+  const previousTrades = showMockData
     ? MOCK_DATA.previousTrades
     : (transactions.length > 0
-        ? transactions.slice(0, 5).map(t => ({
-            date: new Date(t.transaction_date).toLocaleDateString(),
-            symbol: t.symbol || 'TRANSFER',
-            type: t.transaction_type.toUpperCase(),
-            amount: t.total_amount,
-            pnl: t.symbol ? (Math.random() > 0.5 ? Math.random() * 500 : -Math.random() * 100) : 0,
-          }))
-        : []);
+      ? transactions.slice(0, 5).map(t => ({
+        date: new Date(t.transaction_date).toLocaleDateString(),
+        symbol: t.symbol || 'TRANSFER',
+        type: t.transaction_type.toUpperCase(),
+        amount: t.total_amount,
+        pnl: t.symbol ? (Math.random() > 0.5 ? Math.random() * 500 : -Math.random() * 100) : 0,
+      }))
+      : []);
 
   // Format trading strategies for display (mock or real)
-  const displayStrategies = showMockData 
+  const displayStrategies = showMockData
     ? MOCK_DATA.strategies
     : (strategies.length > 0 ? strategies.map(s => ({
-        id: s.id,
-        name: s.name,
-        status: s.is_active ? 'active' : 'paused',
-        nextRun: s.next_execution_at ? new Date(s.next_execution_at).toLocaleDateString() : 'Not scheduled',
-        type: s.is_automated ? 'Automated' : 'Manual',
-      })) : []);
+      id: s.id,
+      name: s.name,
+      status: s.is_active ? 'active' : 'paused',
+      nextRun: s.next_execution_at ? new Date(s.next_execution_at).toLocaleDateString() : 'Not scheduled',
+      type: s.is_automated ? 'Automated' : 'Manual',
+    })) : []);
 
   const displayAccounts = showMockData ? MOCK_DATA.accounts : accounts;
 
-  const notifications = showMockData 
+  const notifications = showMockData
     ? MOCK_DATA.notifications
     : [
-        ...(accounts.length > 0 ? [{ id: 1, type: "sync", title: `${accounts[0].institution_name} connected`, time: "Recently", read: false }] : []),
-        ...(transactions.length > 0 ? [{ id: 2, type: "trade", title: `${transactions.length} transactions synced`, time: "Today", read: true }] : []),
-        ...(holdings.length > 0 ? [{ id: 3, type: "goal", title: `${holdings.length} holdings tracked`, time: "Today", read: true }] : []),
-      ];
+      ...(accounts.length > 0 ? [{ id: 1, type: "sync", title: `${accounts[0].institution_name} connected`, time: "Recently", read: false }] : []),
+      ...(transactions.length > 0 ? [{ id: 2, type: "trade", title: `${transactions.length} transactions synced`, time: "Today", read: true }] : []),
+      ...(holdings.length > 0 ? [{ id: 3, type: "goal", title: `${holdings.length} holdings tracked`, time: "Today", read: true }] : []),
+    ];
 
-  const totalChange = showMockData 
+  const totalChange = showMockData
     ? MOCK_DATA.totalChange
     : (accounts.length > 0 && portfolioData.length > 1
-        ? ((portfolioData[11]?.value - portfolioData[0]?.value) / portfolioData[0]?.value * 100)
-        : 0);
+      ? ((portfolioData[11]?.value - portfolioData[0]?.value) / portfolioData[0]?.value * 100)
+      : 0);
 
   if (!user) {
     return (
@@ -230,11 +226,10 @@ export default function Dashboard() {
                   <div className="flex items-center gap-2 mt-2">
                     <Badge
                       variant="outline"
-                      className={`${
-                        totalChange >= 0
-                          ? "border-primary text-primary"
-                          : "border-destructive text-destructive"
-                      }`}
+                      className={`${totalChange >= 0
+                        ? "border-primary text-primary"
+                        : "border-destructive text-destructive"
+                        }`}
                     >
                       {totalChange >= 0 ? (
                         <ArrowUpRight className="h-3 w-3 mr-1" />
@@ -501,11 +496,10 @@ export default function Dashboard() {
                   {notifications.map((notif) => (
                     <div
                       key={notif.id}
-                      className={`p-3 rounded-lg border transition-colors ${
-                        notif.read
-                          ? "bg-secondary/30 border-border"
-                          : "bg-primary/5 border-primary/30"
-                      }`}
+                      className={`p-3 rounded-lg border transition-colors ${notif.read
+                        ? "bg-secondary/30 border-border"
+                        : "bg-primary/5 border-primary/30"
+                        }`}
                     >
                       <div className="flex items-start gap-3">
                         <div className={`p-1.5 rounded-full ${notif.read ? "bg-muted" : "bg-primary/20"}`}>

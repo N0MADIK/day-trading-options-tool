@@ -45,7 +45,7 @@ import {
   Edit,
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
-import { supabase } from "@/integrations/supabase/client";
+import { api } from "@/lib/api";
 import { useAuth } from "@/hooks/useAuth";
 
 interface NotificationRule {
@@ -151,7 +151,7 @@ export default function CustomNotifications() {
   const [saving, setSaving] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingRule, setEditingRule] = useState<NotificationRule | null>(null);
-  
+
   // Form state
   const [formData, setFormData] = useState({
     rule_name: "",
@@ -178,13 +178,8 @@ export default function CustomNotifications() {
 
   const fetchRules = async () => {
     try {
-      const { data, error } = await supabase
-        .from("custom_notification_rules")
-        .select("*")
-        .order("created_at", { ascending: false });
-
-      if (error) throw error;
-      setRules((data || []) as NotificationRule[]);
+      const data = await api.get<NotificationRule[]>('/custom-notification-rules');
+      setRules(data || []);
     } catch (error: any) {
       toast({
         title: "Error",
@@ -229,7 +224,6 @@ export default function CustomNotifications() {
     setSaving(true);
     try {
       const ruleData = {
-        user_id: user.id,
         rule_name: formData.rule_name,
         rule_type: formData.rule_type,
         indicator_type: formData.indicator_type,
@@ -248,17 +242,10 @@ export default function CustomNotifications() {
       };
 
       if (editingRule) {
-        const { error } = await supabase
-          .from("custom_notification_rules")
-          .update(ruleData)
-          .eq("id", editingRule.id);
-        if (error) throw error;
+        await api.put(`/custom-notification-rules/${editingRule.id}`, ruleData);
         toast({ title: "Rule Updated", description: "Your notification rule has been updated" });
       } else {
-        const { error } = await supabase
-          .from("custom_notification_rules")
-          .insert(ruleData);
-        if (error) throw error;
+        await api.post('/custom-notification-rules', ruleData);
         toast({ title: "Rule Created", description: "Your notification rule has been created" });
       }
 
@@ -278,11 +265,7 @@ export default function CustomNotifications() {
 
   const handleToggleRule = async (rule: NotificationRule) => {
     try {
-      const { error } = await supabase
-        .from("custom_notification_rules")
-        .update({ is_enabled: !rule.is_enabled })
-        .eq("id", rule.id);
-      if (error) throw error;
+      await api.put(`/custom-notification-rules/${rule.id}`, { is_enabled: !rule.is_enabled });
       fetchRules();
     } catch (error: any) {
       toast({
@@ -295,11 +278,7 @@ export default function CustomNotifications() {
 
   const handleDeleteRule = async (ruleId: string) => {
     try {
-      const { error } = await supabase
-        .from("custom_notification_rules")
-        .delete()
-        .eq("id", ruleId);
-      if (error) throw error;
+      await api.delete(`/custom-notification-rules/${ruleId}`);
       toast({ title: "Rule Deleted", description: "The notification rule has been removed" });
       fetchRules();
     } catch (error: any) {
@@ -391,11 +370,10 @@ export default function CustomNotifications() {
                       key={category.id}
                       type="button"
                       onClick={() => setFormData({ ...formData, rule_type: category.id, indicator_type: "" })}
-                      className={`p-3 rounded-lg border text-left transition-colors ${
-                        formData.rule_type === category.id
+                      className={`p-3 rounded-lg border text-left transition-colors ${formData.rule_type === category.id
                           ? "border-primary bg-primary/10"
                           : "border-border hover:bg-muted"
-                      }`}
+                        }`}
                     >
                       <category.icon className="h-5 w-5 mb-1" />
                       <p className="text-sm font-medium">{category.name}</p>
@@ -468,7 +446,7 @@ export default function CustomNotifications() {
                   <Clock className="h-4 w-4" />
                   Notification Timing
                 </h4>
-                
+
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label>Frequency</Label>
@@ -567,7 +545,7 @@ export default function CustomNotifications() {
                   <Bell className="h-4 w-4" />
                   Delivery Methods
                 </h4>
-                
+
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
@@ -706,7 +684,7 @@ export default function CustomNotifications() {
                 const category = getCategoryInfo(rule.rule_type);
                 const indicator = getIndicatorInfo(rule.rule_type, rule.indicator_type);
                 const urgency = urgencyOptions.find(u => u.value === rule.urgency_level);
-                
+
                 return (
                   <Card key={rule.id} className={!rule.is_enabled ? "opacity-60" : ""}>
                     <CardContent className="p-4">
@@ -773,7 +751,7 @@ export default function CustomNotifications() {
                 {rules.filter(r => r.rule_type === cat.id).map((rule) => {
                   const indicator = getIndicatorInfo(rule.rule_type, rule.indicator_type);
                   const urgency = urgencyOptions.find(u => u.value === rule.urgency_level);
-                  
+
                   return (
                     <Card key={rule.id} className={!rule.is_enabled ? "opacity-60" : ""}>
                       <CardContent className="p-4">

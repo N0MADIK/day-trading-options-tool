@@ -34,7 +34,7 @@ import {
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
-import { supabase } from "@/integrations/supabase/client";
+import { api } from "@/lib/api";
 
 interface Profile {
   firstName: string;
@@ -71,13 +71,16 @@ export default function Account() {
 
     const fetchProfile = async () => {
       try {
-        const { data, error } = await supabase
-          .from("profiles")
-          .select("*")
-          .eq("user_id", user.id)
-          .maybeSingle();
-
-        if (error) throw error;
+        const data = await api.get<{
+          full_name?: string;
+          email?: string;
+          phone?: string;
+          address?: string;
+          date_of_birth?: string;
+          avatar_url?: string;
+          subscription_tier?: string;
+          created_at?: string;
+        }>('/profiles/me').catch(() => null);
 
         if (data) {
           const [firstName, ...lastNameParts] = (data.full_name || "").split(" ");
@@ -119,20 +122,15 @@ export default function Account() {
 
     try {
       const fullName = `${profile.firstName} ${profile.lastName}`.trim();
-      
-      const { error } = await supabase
-        .from("profiles")
-        .update({
-          full_name: fullName,
-          email: profile.email,
-          phone: profile.phone || null,
-          address: profile.address || null,
-          date_of_birth: profile.dateOfBirth || null,
-          avatar_url: profile.avatarUrl || null,
-        })
-        .eq("user_id", user.id);
 
-      if (error) throw error;
+      await api.put('/profiles/me', {
+        full_name: fullName,
+        email: profile.email,
+        phone: profile.phone || null,
+        address: profile.address || null,
+        date_of_birth: profile.dateOfBirth || null,
+        avatar_url: profile.avatarUrl || null,
+      });
 
       setIsEditing(false);
       toast({
@@ -155,19 +153,19 @@ export default function Account() {
     if (!user) return;
 
     try {
-      // Fetch all user data
+      // Fetch all user data via API
       const [profileData, accountsData, holdingsData, transactionsData] = await Promise.all([
-        supabase.from("profiles").select("*").eq("user_id", user.id),
-        supabase.from("connected_accounts").select("*").eq("user_id", user.id),
-        supabase.from("holdings").select("*").eq("user_id", user.id),
-        supabase.from("transactions").select("*").eq("user_id", user.id),
+        api.get('/profiles/me').catch(() => null),
+        api.get('/connected-accounts').catch(() => []),
+        api.get('/holdings').catch(() => []),
+        api.get('/transactions').catch(() => []),
       ]);
 
       const exportData = {
-        profile: profileData.data,
-        accounts: accountsData.data,
-        holdings: holdingsData.data,
-        transactions: transactionsData.data,
+        profile: profileData,
+        accounts: accountsData,
+        holdings: holdingsData,
+        transactions: transactionsData,
         exportedAt: new Date().toISOString(),
       };
 

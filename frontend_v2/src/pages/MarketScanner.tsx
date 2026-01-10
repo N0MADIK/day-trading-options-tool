@@ -36,7 +36,7 @@ import { RuleBacktester } from "@/components/strategizer/RuleBacktester";
 import { Time } from "lightweight-charts";
 import { useMarketDataConnections, MARKET_DATA_PROVIDERS } from "@/hooks/useMarketDataConnections";
 import { useAuth } from "@/hooks/useAuth";
-import { supabase } from "@/integrations/supabase/client";
+import { api } from "@/lib/api";
 
 interface WatchlistItem {
   id?: string;
@@ -59,12 +59,12 @@ const generateCandlestickData = (basePrice: number, days: number = 90): ChartDat
   const data: ChartDataPoint[] = [];
   let price = basePrice * 0.9;
   const now = new Date();
-  
+
   for (let i = days; i >= 0; i--) {
     const date = new Date(now);
     date.setDate(date.getDate() - i);
     const timestamp = Math.floor(date.getTime() / 1000) as Time;
-    
+
     const volatility = basePrice * 0.02;
     const open = price;
     const change = (Math.random() - 0.48) * volatility;
@@ -72,7 +72,7 @@ const generateCandlestickData = (basePrice: number, days: number = 90): ChartDat
     const high = Math.max(open, close) + Math.random() * volatility * 0.5;
     const low = Math.min(open, close) - Math.random() * volatility * 0.5;
     const volume = Math.floor(Math.random() * 10000000) + 1000000;
-    
+
     data.push({ time: timestamp, open, high, low, close, volume });
     price = close;
   }
@@ -107,7 +107,7 @@ const generateStockData = (symbol: string): WatchlistItem => {
   const change = (Math.random() - 0.5) * basePrice * 0.05;
   const volume = Math.floor(Math.random() * 50) + 1;
   const marketCap = Math.floor(Math.random() * 2000) + 10;
-  
+
   return {
     symbol: symbol.toUpperCase(),
     name: `${symbol.toUpperCase()} Corporation`,
@@ -142,7 +142,7 @@ const calculateEMA = (data: ChartDataPoint[], period: number): IndicatorSeries =
   const result: IndicatorSeries["data"] = [];
   const multiplier = 2 / (period + 1);
   let ema = data.slice(0, period).reduce((acc, d) => acc + d.close, 0) / period;
-  
+
   for (let i = period - 1; i < data.length; i++) {
     if (i === period - 1) {
       result.push({ time: data[i].time, value: ema });
@@ -157,7 +157,7 @@ const calculateEMA = (data: ChartDataPoint[], period: number): IndicatorSeries =
 export default function MarketScanner() {
   const { user } = useAuth();
   const { subscriptions, getActiveProvider } = useMarketDataConnections();
-  
+
   const [watchlist, setWatchlist] = useState<WatchlistItem[]>([]);
   const [selectedStock, setSelectedStock] = useState<WatchlistItem | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
@@ -176,18 +176,19 @@ export default function MarketScanner() {
   const activeProvider = getActiveProvider();
   const providerInfo = MARKET_DATA_PROVIDERS.find(p => p.id === activeProvider?.provider_name) || MARKET_DATA_PROVIDERS[0];
 
-  // Fetch user's watchlist from database
+  // Fetch user's watchlist from API
   const fetchWatchlist = useCallback(async () => {
     if (!user) return;
-    
-    try {
-      const { data, error } = await supabase
-        .from('watchlist')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false });
 
-      if (error) throw error;
+    try {
+      const data = await api.get<Array<{
+        id: string;
+        symbol: string;
+        name?: string;
+        notes?: string;
+        price_alert_above?: number;
+        price_alert_below?: number;
+      }>>('/watchlist');
 
       // Convert database records to WatchlistItem format with mock price data
       const items: WatchlistItem[] = (data || []).map(item => ({
@@ -201,7 +202,7 @@ export default function MarketScanner() {
       }));
 
       setWatchlist(items);
-      
+
       // Select first item if none selected
       if (items.length > 0 && !selectedStock) {
         handleSelectStock(items[0]);
@@ -223,15 +224,15 @@ export default function MarketScanner() {
     }
 
     const term = searchTerm.toUpperCase();
-    const matches = popularStocks.filter(s => 
+    const matches = popularStocks.filter(s =>
       s.includes(term) || term.includes(s.slice(0, 2))
     ).slice(0, 8);
-    
+
     // Always include the exact search term if it's valid (1-5 chars)
     if (term.length >= 1 && term.length <= 5 && !matches.includes(term)) {
       matches.unshift(term);
     }
-    
+
     setSearchResults(matches);
   }, [searchTerm]);
 
@@ -248,14 +249,14 @@ export default function MarketScanner() {
     setLoading(true);
     setSearchTerm("");
     setSearchResults([]);
-    
+
     try {
       // Generate mock data for the searched stock
       const stockData = generateStockData(symbol);
       setSelectedStock(stockData);
       setChartData(generateCandlestickData(stockData.price));
       setOptionsChain(generateOptionsChain(stockData.price));
-      
+
       toast.success(`Loaded ${symbol} using ${providerInfo.name}`);
     } catch (error: any) {
       toast.error(`Failed to load ${symbol}: ${error.message}`);
@@ -277,17 +278,12 @@ export default function MarketScanner() {
     }
 
     setSavingToWatchlist(true);
-    
-    try {
-      const { error } = await supabase
-        .from('watchlist')
-        .insert({
-          user_id: user.id,
-          symbol: selectedStock.symbol,
-          name: selectedStock.name,
-        });
 
-      if (error) throw error;
+    try {
+      await api.post('/watchlist', {
+        symbol: selectedStock.symbol,
+        name: selectedStock.name,
+      });
 
       toast.success(`${selectedStock.symbol} added to watchlist`);
       await fetchWatchlist();
@@ -302,20 +298,14 @@ export default function MarketScanner() {
     if (!item.id || !user) return;
 
     try {
-      const { error } = await supabase
-        .from('watchlist')
-        .delete()
-        .eq('id', item.id)
-        .eq('user_id', user.id);
-
-      if (error) throw error;
+      await api.delete(`/watchlist/${item.id}`);
 
       toast.success(`${item.symbol} removed from watchlist`);
-      
+
       if (selectedStock?.symbol === item.symbol) {
         setSelectedStock(null);
       }
-      
+
       await fetchWatchlist();
     } catch (error: any) {
       toast.error(`Failed to remove: ${error.message}`);
@@ -374,12 +364,12 @@ export default function MarketScanner() {
             <div className="flex gap-2">
               <div className="relative flex-1">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input 
-                  placeholder="Search any ticker (e.g., AAPL, TSLA, BTC-USD)" 
-                  value={searchTerm} 
-                  onChange={(e) => setSearchTerm(e.target.value.toUpperCase())} 
-                  onKeyDown={(e) => e.key === "Enter" && searchTerm && handleSearchStock(searchTerm)} 
-                  className="pl-10 font-mono" 
+                <Input
+                  placeholder="Search any ticker (e.g., AAPL, TSLA, BTC-USD)"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value.toUpperCase())}
+                  onKeyDown={(e) => e.key === "Enter" && searchTerm && handleSearchStock(searchTerm)}
+                  className="pl-10 font-mono"
                 />
               </div>
               <Button onClick={() => searchTerm && handleSearchStock(searchTerm)} disabled={loading || !searchTerm}>
@@ -387,7 +377,7 @@ export default function MarketScanner() {
                 Search
               </Button>
             </div>
-            
+
             {/* Search Suggestions */}
             {searchResults.length > 0 && (
               <div className="absolute top-full left-0 right-0 mt-1 bg-popover border border-border rounded-lg shadow-lg z-50">
@@ -431,15 +421,15 @@ export default function MarketScanner() {
                 </div>
               ) : (
                 watchlist.map((stock) => (
-                  <div 
-                    key={stock.id || stock.symbol} 
-                    className={`p-3 rounded-lg cursor-pointer transition-all border ${selectedStock?.symbol === stock.symbol ? "border-primary bg-primary/10" : "border-border hover:border-primary/50"}`} 
+                  <div
+                    key={stock.id || stock.symbol}
+                    className={`p-3 rounded-lg cursor-pointer transition-all border ${selectedStock?.symbol === stock.symbol ? "border-primary bg-primary/10" : "border-border hover:border-primary/50"}`}
                     onClick={() => handleSelectStock(stock)}
                   >
                     <div className="flex items-center justify-between mb-1">
                       <span className="font-mono font-bold text-primary">{stock.symbol}</span>
-                      <button 
-                        onClick={(e) => { e.stopPropagation(); handleRemoveFromWatchlist(stock); }} 
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleRemoveFromWatchlist(stock); }}
                         className="text-muted-foreground hover:text-destructive"
                       >
                         <X className="h-4 w-4" />
@@ -480,8 +470,8 @@ export default function MarketScanner() {
                     </div>
                     <div className="flex gap-2">
                       {user && (
-                        <Button 
-                          variant={isInWatchlist ? "outline" : "default"} 
+                        <Button
+                          variant={isInWatchlist ? "outline" : "default"}
                           size="sm"
                           onClick={isInWatchlist ? () => handleRemoveFromWatchlist(watchlist.find(s => s.symbol === selectedStock.symbol)!) : handleAddToWatchlist}
                           disabled={savingToWatchlist}
@@ -535,10 +525,10 @@ export default function MarketScanner() {
                     <TabsContent value="chart" className="mt-0">
                       <InteractiveChart data={chartData} indicators={indicatorSeries} symbol={selectedStock.symbol} />
                     </TabsContent>
-                    
+
                     <TabsContent value="signals" className="mt-0">
-                      <SignalDetector 
-                        symbol={selectedStock.symbol} 
+                      <SignalDetector
+                        symbol={selectedStock.symbol}
                         currentPrice={selectedStock.price}
                         chartData={chartData}
                         onSignalDetected={(signal) => {
@@ -546,7 +536,7 @@ export default function MarketScanner() {
                         }}
                       />
                     </TabsContent>
-                    
+
                     <TabsContent value="backtest" className="mt-0">
                       <RuleBacktester
                         rule={{
@@ -569,7 +559,7 @@ export default function MarketScanner() {
                         }}
                       />
                     </TabsContent>
-                    
+
                     <TabsContent value="options" className="mt-0">
                       <div className="mb-4 flex items-center justify-between">
                         <p className="text-sm text-muted-foreground">Expiration: Jan 19, 2024</p>
