@@ -167,43 +167,30 @@ export default function Connections() {
     if (!user || !pendingInstitution) return;
 
     try {
-      // Exchange public token for access token
-      const tokenResult = await exchangeToken(publicToken);
-      if (!tokenResult) throw new Error('Failed to exchange Plaid token');
+      // Step 1: Exchange public token for access token via backend
+      const exchangeResult = await api.post<{ access_token: string; item_id: string }>(
+        '/integrations/plaid/exchange-token',
+        { public_token: publicToken }
+      );
 
-      // Get account details from Plaid
-      const plaidAccounts = await getPlaidAccounts(tokenResult.accessToken);
-
-      if (plaidAccounts && plaidAccounts.length > 0) {
-        // Save each account via API
-        for (const acc of plaidAccounts) {
-          await api.post('/connected-accounts', {
-            institution_name: metadata.institution?.name || pendingInstitution.name,
-            institution_type: pendingInstitution.type,
-            account_name: acc.name || acc.official_name || `${pendingInstitution.name} Account`,
-            account_number_masked: acc.mask ? `****${acc.mask}` : null,
-            balance: acc.balances?.current || acc.balances?.available || 0,
-            currency: acc.balances?.iso_currency_code || 'USD',
-            is_connected: true,
-            connection_status: 'active',
-            last_synced_at: new Date().toISOString(),
-            metadata: {
-              provider: 'plaid',
-              institution_id: pendingInstitution.id,
-              plaid_item_id: tokenResult.itemId,
-              plaid_account_id: acc.account_id,
-              account_type: acc.type,
-              account_subtype: acc.subtype,
-            }
-          });
+      // Step 2: Create integration in backend (stores encrypted credentials)
+      const integration = await api.post<{ id: number; integration_type: string; status: string }>(
+        '/integrations',
+        {
+          integration_type: 'plaid',
+          credentials: {
+            access_token: exchangeResult.access_token
+          },
+          is_sandbox: false
         }
+      );
 
-        toast.success(`Connected ${plaidAccounts.length} account(s) from ${pendingInstitution.name}!`);
-        fetchAccounts();
-        setActiveTab('connected');
-      } else {
-        toast.error('No accounts found');
-      }
+      // Step 3: Trigger sync to create connected accounts
+      await api.post(`/integrations/${integration.id}/sync`);
+
+      toast.success(`Connected to ${pendingInstitution.name}!`);
+      fetchAccounts();
+      setActiveTab('connected');
     } catch (error: any) {
       console.error('Plaid connection error:', error);
       toast.error(`Failed to connect: ${error.message}`);
@@ -212,7 +199,7 @@ export default function Connections() {
       setDialogOpen(null);
       setPendingConnection(null);
     }
-  }, [user, pendingInstitution, exchangeToken, getPlaidAccounts, fetchAccounts, setPendingConnection]);
+  }, [user, pendingInstitution, fetchAccounts, setPendingConnection]);
 
   // Plaid Link hook
   const { open: openPlaidLink, ready: plaidLinkReady } = usePlaidLink({

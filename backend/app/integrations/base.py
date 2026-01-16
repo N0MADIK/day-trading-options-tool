@@ -43,6 +43,7 @@ class BaseIntegration(ABC):
         method: str,
         url: str,
         headers: Optional[Dict[str, str]] = None,
+        params: Optional[Dict[str, Any]] = None,
         data: Optional[Dict[str, Any]] = None,
         json_data: Optional[Dict[str, Any]] = None,
         retry_count: Optional[int] = None
@@ -59,6 +60,7 @@ class BaseIntegration(ABC):
                     method,
                     url,
                     headers=headers,
+                    params=params,
                     data=data,
                     json=json_data
                 ) as response:

@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
-import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from './useAuth';
 import { toast } from 'sonner';
+import { api } from '@/lib/api';
 
 interface SnapTradeAccount {
   id: string;
@@ -41,24 +41,19 @@ export function useSnapTrade() {
 
     setIsLoading(true);
     try {
-      const { data, error } = await supabase.functions.invoke('snaptrade-link', {
-        body: { action: 'register_user', user_id: user.id },
+      const response = await api.post<{ user_secret: string; user_id: string }>(
+        '/integrations/snaptrade/register',
+        { user_id: user.id }
+      );
+
+      setUserSecret(response.user_secret);
+
+      // Store user secret in profile metadata for future use
+      await api.put('/profiles/me', {
+        metadata: { snaptrade_user_secret: response.user_secret }
       });
 
-      if (error) throw error;
-      if (data.error) throw new Error(data.error);
-
-      setUserSecret(data.user_secret);
-      
-      // Store user secret in profile metadata for future use
-      await supabase
-        .from('profiles')
-        .update({ 
-          metadata: { snaptrade_user_secret: data.user_secret }
-        } as any)
-        .eq('user_id', user.id);
-
-      return data.user_secret;
+      return response.user_secret;
     } catch (error: any) {
       console.error('Error registering SnapTrade user:', error);
       // If user already exists, try to get existing secret
@@ -87,19 +82,15 @@ export function useSnapTrade() {
 
     setIsLoading(true);
     try {
-      const { data, error } = await supabase.functions.invoke('snaptrade-link', {
-        body: { 
-          action: 'get_login_link', 
-          user_id: user.id,
-          user_secret: userSecretToUse,
-          ...(broker && { account_id: broker }),
-        },
-      });
+      const response = await api.post<{ authorization_url: string; brokerage_authorization_id: string }>(
+        `/integrations/snaptrade/connect?user_secret=${encodeURIComponent(userSecretToUse)}`,
+        {
+          brokerage_id: broker || 'default',
+          redirect_uri: window.location.origin + '/connections'
+        }
+      );
 
-      if (error) throw error;
-      if (data.error) throw new Error(data.error);
-
-      return data.redirect_uri;
+      return response.authorization_url;
     } catch (error: any) {
       console.error('Error getting login link:', error);
       toast.error('Failed to get connection link: ' + error.message);
@@ -116,18 +107,29 @@ export function useSnapTrade() {
     if (!userSecretToUse) return null;
 
     try {
-      const { data, error } = await supabase.functions.invoke('snaptrade-link', {
-        body: { 
-          action: 'get_accounts', 
-          user_id: user.id,
-          user_secret: userSecretToUse,
-        },
-      });
+      // Get accounts from connected-accounts endpoint
+      // This returns the accounts synced via the backend
+      const accounts = await api.get<any[]>('/connected-accounts');
 
-      if (error) throw error;
-      if (data.error) throw new Error(data.error);
+      // Filter for SnapTrade accounts and map to expected format
+      const snapTradeAccounts = accounts
+        .filter(acc => acc.metadata?.integration_type === 'snaptrade')
+        .map(acc => ({
+          id: acc.metadata?.snaptrade_account_id || acc.id,
+          brokerage_authorization: acc.metadata?.snaptrade_authorization_id || '',
+          portfolio_group: null,
+          name: acc.account_name || 'Account',
+          number: acc.account_number_masked || '',
+          institution_name: acc.institution_name || '',
+          balance: {
+            total: {
+              amount: acc.balance || 0,
+              currency: acc.currency || 'USD'
+            }
+          }
+        }));
 
-      return data.accounts;
+      return snapTradeAccounts;
     } catch (error: any) {
       console.error('Error fetching SnapTrade accounts:', error);
       return null;
@@ -141,19 +143,25 @@ export function useSnapTrade() {
     if (!userSecretToUse) return null;
 
     try {
-      const { data, error } = await supabase.functions.invoke('snaptrade-link', {
-        body: { 
-          action: 'get_holdings', 
-          user_id: user.id,
-          user_secret: userSecretToUse,
-          ...(accountId && { account_id: accountId }),
+      // Holdings are now stored in the backend database
+      // We can fetch them via the holdings API endpoint
+      const endpoint = accountId
+        ? `/holdings?account_id=${encodeURIComponent(accountId)}`
+        : '/holdings';
+      const holdings = await api.get<any[]>(endpoint);
+
+      return holdings.map(h => ({
+        symbol: {
+          id: h.symbol,
+          symbol: h.symbol,
+          description: h.name || h.symbol
         },
-      });
-
-      if (error) throw error;
-      if (data.error) throw new Error(data.error);
-
-      return data.holdings;
+        units: h.quantity || 0,
+        price: h.current_price || 0,
+        open_pnl: h.unrealized_pnl || 0,
+        fractional_units: 0,
+        average_purchase_price: h.average_cost || null
+      }));
     } catch (error: any) {
       console.error('Error fetching holdings:', error);
       return null;
@@ -167,19 +175,13 @@ export function useSnapTrade() {
     if (!userSecretToUse) return null;
 
     try {
-      const { data, error } = await supabase.functions.invoke('snaptrade-link', {
-        body: { 
-          action: 'get_activities', 
-          user_id: user.id,
-          user_secret: userSecretToUse,
-          ...(accountId && { account_id: accountId }),
-        },
-      });
+      // Activities/transactions are now stored in the backend database
+      const endpoint = accountId
+        ? `/transactions?account_id=${encodeURIComponent(accountId)}`
+        : '/transactions';
+      const transactions = await api.get<any[]>(endpoint);
 
-      if (error) throw error;
-      if (data.error) throw new Error(data.error);
-
-      return data.activities;
+      return transactions;
     } catch (error: any) {
       console.error('Error fetching activities:', error);
       return null;
@@ -193,18 +195,11 @@ export function useSnapTrade() {
     if (!userSecretToUse) return null;
 
     try {
-      const { data, error } = await supabase.functions.invoke('snaptrade-link', {
-        body: { 
-          action: 'list_connections', 
-          user_id: user.id,
-          user_secret: userSecretToUse,
-        },
-      });
+      // Connections are now managed via integrations endpoint
+      const integrations = await api.get<any[]>('/integrations');
 
-      if (error) throw error;
-      if (data.error) throw new Error(data.error);
-
-      return data.connections;
+      // Filter for SnapTrade integrations
+      return integrations.filter(i => i.integration_type === 'snaptrade');
     } catch (error: any) {
       console.error('Error listing connections:', error);
       return null;

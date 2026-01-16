@@ -30,6 +30,7 @@ dependencies = [
   "aiohttp>=3.9.0",
   "email-validator>=2.3.0",
   "bcrypt==4.0.1",
+  "snaptrade-python-sdk>=10.34.10",
 ]
 
 [tool.setuptools.packages.find]

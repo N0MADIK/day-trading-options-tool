@@ -6,7 +6,7 @@ from app.api.v1.routers import (
     # New routers for finance-flow integration
     profiles, user_roles, connected_accounts, market_data_subscriptions,
     net_worth, custom_notification_rules, websocket_router, market_data,
-    notification_settings
+    notification_settings, holdings, transactions
 )
 
 api_router = APIRouter(prefix="/api/v1")
@@ -33,5 +33,6 @@ api_router.include_router(custom_notification_rules.router)
 api_router.include_router(websocket_router.router)
 api_router.include_router(market_data.router)
 api_router.include_router(notification_settings.router)
-
+api_router.include_router(holdings.router)
+api_router.include_router(transactions.router)
 

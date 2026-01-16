@@ -235,7 +235,10 @@ async def initiate_snaptrade_connection(
     try:
         async with SnapTradeIntegration() as snaptrade:
             result = await snaptrade.initiate_connection(
-                credentials={'user_secret': user_secret},
+                credentials={
+                    'user_secret': user_secret,
+                    'user_id': current_user  # FIX: Pass user_id here
+                },
                 brokerage_id=request.brokerage_id,
                 redirect_uri=request.redirect_uri
             )

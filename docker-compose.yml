@@ -11,6 +11,16 @@ services:
       - ./backend/data:/app/data
     environment:
       - PYTHONUNBUFFERED=1
+      # SnapTrade Configuration
+      - SNAPTRADE_CLIENT_ID=${SNAPTRADE_CLIENT_ID}
+      - SNAPTRADE_CONSUMER_KEY=${SNAPTRADE_CONSUMER_KEY}
+      # Plaid Configuration (if needed)
+      - PLAID_CLIENT_ID=${PLAID_CLIENT_ID:-}
+      - PLAID_SECRET=${PLAID_SECRET:-}
+      - PLAID_ENV=${PLAID_ENV:-sandbox}
+      # Alpaca Configuration (if needed)
+      - ALPACA_API_KEY=${ALPACA_API_KEY:-}
+      - ALPACA_SECRET_KEY=${ALPACA_SECRET_KEY:-}
     env_file:
       - path: ./backend/.env
         required: false
@@ -24,7 +34,7 @@ services:
       - "5420:80"
     depends_on:
       - backend
-    profiles: ["v1"]
+    profiles: [ "v1" ]
 
   # Finance Flow Frontend v2 (integrated dashboard)
   frontend_v2:
@@ -40,7 +50,7 @@ services:
       - "3000:80"
     depends_on:
       - backend
-    profiles: ["v2"]
+    profiles: [ "v2" ]
 
 networks:
   default:
