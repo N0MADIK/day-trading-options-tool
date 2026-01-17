@@ -11,15 +11,21 @@ from snaptrade_client import SnapTrade, ApiException
 from .base import BaseIntegration
 from app.domain.errors import ExternalServiceError, ValidationError
 
+from app.core.config import settings
+
 class SnapTradeIntegration(BaseIntegration):
     """Integration with SnapTrade using the Official SDK"""
     
     def __init__(self):
         super().__init__()
+        
+        if not settings.snaptrade_client_id or not settings.snaptrade_consumer_key:
+            raise ValueError("SnapTrade credentials not configured in settings")
+            
         # Initialize the official client
         self.client = SnapTrade(
-            consumer_key=os.getenv('SNAPTRADE_CONSUMER_KEY'),
-            client_id=os.getenv('SNAPTRADE_CLIENT_ID')
+            consumer_key=settings.snaptrade_consumer_key,
+            client_id=settings.snaptrade_client_id
         )
         
         # Mapping of common frontend slugs to SnapTrade broker slugs
@@ -113,17 +119,21 @@ class SnapTradeIntegration(BaseIntegration):
 
     async def register_user(self, user_id: str) -> Dict[str, Any]:
         """Register a new SnapTrade user"""
+        print(f"DEBUG: Registering SnapTrade user: {user_id}")
         try:
+            print(f"DEBUG: Calling SDK register_snap_trade_user...")
             response = await self._run_sdk(
                 self.client.authentication.register_snap_trade_user,
                 body={"userId": user_id}
             )
+            print(f"DEBUG: Registration successful, got secret: {response.body['userSecret'][:5]}...")
             
             return {
                 'user_secret': response.body['userSecret'],
                 'user_id': user_id
             }
         except ApiException as e:
+            print(f"DEBUG: SnapTrade SDK Error: {e.status} - {e.body}")
             raise ExternalServiceError(f"SnapTrade Registration Failed: {e.body}")
 
     async def initiate_connection(

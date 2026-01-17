@@ -103,3 +103,95 @@ async def test_test_connection_success(integration_service, mock_session):
         assert mock_integration.status == IntegrationStatus.ACTIVE
         mock_session.commit.assert_called()
 
+
+class TestSyncHoldings:
+    """Tests for sync_holdings method."""
+
+    @pytest.mark.asyncio
+    async def test_sync_holdings_integration_not_found(self, integration_service, mock_session):
+        """Test sync_holdings raises NotFoundError for missing integration."""
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = None
+        mock_session.execute.return_value = mock_result
+        
+        with pytest.raises(NotFoundError):
+            await integration_service.sync_holdings("user_123", 999)
+
+    @pytest.mark.asyncio
+    async def test_sync_holdings_wrong_integration_type(self, integration_service, mock_session):
+        """Test sync_holdings raises ValidationError for non-SnapTrade integration."""
+        mock_integration = MagicMock()
+        mock_integration.integration_type = IntegrationType.PLAID
+        
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = mock_integration
+        mock_session.execute.return_value = mock_result
+        
+        with pytest.raises(ValidationError) as exc_info:
+            await integration_service.sync_holdings("user_123", 1)
+        
+        assert "SnapTrade" in str(exc_info.value)
+
+
+class TestSyncTransactions:
+    """Tests for sync_transactions method."""
+
+    @pytest.mark.asyncio
+    async def test_sync_transactions_integration_not_found(self, integration_service, mock_session):
+        """Test sync_transactions raises NotFoundError for missing integration."""
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = None
+        mock_session.execute.return_value = mock_result
+        
+        with pytest.raises(NotFoundError):
+            await integration_service.sync_transactions("user_123", 999)
+
+    @pytest.mark.asyncio
+    async def test_sync_transactions_wrong_integration_type(self, integration_service, mock_session):
+        """Test sync_transactions raises ValidationError for non-SnapTrade integration."""
+        mock_integration = MagicMock()
+        mock_integration.integration_type = IntegrationType.ALPACA
+        
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = mock_integration
+        mock_session.execute.return_value = mock_result
+        
+        with pytest.raises(ValidationError) as exc_info:
+            await integration_service.sync_transactions("user_123", 1)
+        
+        assert "SnapTrade" in str(exc_info.value)
+
+
+class TestGetOrCreateSecurity:
+    """Tests for _get_or_create_security helper."""
+
+    @pytest.mark.asyncio
+    async def test_get_existing_security(self, integration_service, mock_session):
+        """Test retrieving an existing security."""
+        mock_security = MagicMock()
+        mock_security.id = 42
+        mock_security.symbol = "AAPL"
+        
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = mock_security
+        mock_session.execute.return_value = mock_result
+        
+        result = await integration_service._get_or_create_security("AAPL")
+        
+        assert result.symbol == "AAPL"
+        assert result.id == 42
+        mock_session.add.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_create_new_security(self, integration_service, mock_session):
+        """Test creating a new security when it doesn't exist."""
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = None
+        mock_session.execute.return_value = mock_result
+        
+        result = await integration_service._get_or_create_security("NEWSTOCK", name="New Stock Inc", security_type="equity")
+        
+        assert result.symbol == "NEWSTOCK"
+        assert result.name == "New Stock Inc"
+        mock_session.add.assert_called_once()
+        mock_session.flush.assert_called_once()

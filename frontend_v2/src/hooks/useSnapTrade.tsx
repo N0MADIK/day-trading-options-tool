@@ -206,6 +206,37 @@ export function useSnapTrade() {
     }
   }, [user, userSecret]);
 
+  const ensureIntegration = useCallback(async (secret?: string) => {
+    const userSecretToUse = secret || userSecret;
+    if (!user || !userSecretToUse) return null;
+
+    try {
+      const integrations = await api.get<any[]>('/integrations');
+      const existing = integrations.find(i => i.integration_type === 'snaptrade');
+      if (existing) return existing.id;
+
+      // Create if not exists
+      const newIntegration = await api.post<{ id: number }>('/integrations', {
+        integration_type: 'snaptrade',
+        credentials: { user_id: user.id, user_secret: userSecretToUse },
+        is_sandbox: false
+      });
+      return newIntegration.id;
+    } catch (error) {
+      console.error('Error ensuring integration record:', error);
+      return null;
+    }
+  }, [user, userSecret]);
+
+  const syncIntegration = useCallback(async (integrationId: number | string) => {
+    try {
+      return await api.post(`/integrations/${integrationId}/sync/full`);
+    } catch (error) {
+      console.error('Sync failed:', error);
+      throw error;
+    }
+  }, []);
+
   return {
     isLoading,
     userSecret,
@@ -216,5 +247,7 @@ export function useSnapTrade() {
     getHoldings,
     getActivities,
     listConnections,
+    ensureIntegration,
+    syncIntegration,
   };
 }

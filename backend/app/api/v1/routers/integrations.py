@@ -157,6 +157,66 @@ async def get_integration_accounts(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.post("/{integration_id}/sync/holdings")
+async def sync_integration_holdings(
+    integration_id: int,
+    current_user: str = Depends(get_current_user),
+    service: IntegrationService = Depends(get_integration_service)
+):
+    """Sync holdings from an integration to personal finance models"""
+    try:
+        result = await service.sync_holdings(current_user, integration_id)
+        return result
+    except NotFoundError as e:
+        raise HTTPException(status_code=404, detail=e.message)
+    except ValidationError as e:
+        raise HTTPException(status_code=400, detail=e.message)
+    except ExternalServiceError as e:
+        raise HTTPException(status_code=502, detail=e.message)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/{integration_id}/sync/transactions")
+async def sync_integration_transactions(
+    integration_id: int,
+    current_user: str = Depends(get_current_user),
+    service: IntegrationService = Depends(get_integration_service)
+):
+    """Sync transactions from an integration to personal finance models"""
+    try:
+        result = await service.sync_transactions(current_user, integration_id)
+        return result
+    except NotFoundError as e:
+        raise HTTPException(status_code=404, detail=e.message)
+    except ValidationError as e:
+        raise HTTPException(status_code=400, detail=e.message)
+    except ExternalServiceError as e:
+        raise HTTPException(status_code=502, detail=e.message)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/{integration_id}/sync/full")
+async def full_sync_integration(
+    integration_id: int,
+    current_user: str = Depends(get_current_user),
+    service: IntegrationService = Depends(get_integration_service)
+):
+    """Perform full sync: accounts, holdings, and transactions"""
+    try:
+        result = await service.full_sync(current_user, integration_id)
+        return result
+    except NotFoundError as e:
+        raise HTTPException(status_code=404, detail=e.message)
+    except ValidationError as e:
+        raise HTTPException(status_code=400, detail=e.message)
+    except ExternalServiceError as e:
+        raise HTTPException(status_code=502, detail=e.message)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # Plaid-specific endpoints
 @router.post("/plaid/link-token")
 async def create_plaid_link_token(

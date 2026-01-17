@@ -11,9 +11,6 @@ services:
       - ./backend/data:/app/data
     environment:
       - PYTHONUNBUFFERED=1
-      # SnapTrade Configuration
-      - SNAPTRADE_CLIENT_ID=${SNAPTRADE_CLIENT_ID}
-      - SNAPTRADE_CONSUMER_KEY=${SNAPTRADE_CONSUMER_KEY}
       # Plaid Configuration (if needed)
       - PLAID_CLIENT_ID=${PLAID_CLIENT_ID:-}
       - PLAID_SECRET=${PLAID_SECRET:-}

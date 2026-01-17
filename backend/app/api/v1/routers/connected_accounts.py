@@ -281,7 +281,7 @@ async def sync_account(
     integration_service = IntegrationService(session)
     
     try:
-        sync_result = await integration_service.sync_accounts(current_user_id, integration.id)
+        sync_result = await integration_service.full_sync(current_user_id, integration.id)
         
         account_uuid = UUID(int=account.id)
         

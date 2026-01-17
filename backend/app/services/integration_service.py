@@ -3,8 +3,13 @@ from typing import Dict, Any, Optional, List
 from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.models.integrations import UserIntegration, ConnectedAccount, IntegrationType, IntegrationStatus
+from app.models.personal_finance import (
+    Institution, Connection, Account as PFAccount, 
+    Security, Holding, Transaction as PFTransaction
+)
 from app.integrations import PlaidIntegration, AlpacaIntegration, SnapTradeIntegration
 from app.core.security import credential_encryption
 from app.domain.errors import NotFoundError, ValidationError, ExternalServiceError
@@ -325,3 +330,268 @@ class IntegrationService:
             })
         
         return accounts
+
+    async def _get_or_create_security(self, symbol: str, name: Optional[str] = None, security_type: str = 'equity') -> Security:
+        """Get existing security or create a new one."""
+        result = await self.session.execute(
+            select(Security).where(Security.symbol == symbol)
+        )
+        security = result.scalar_one_or_none()
+        
+        if not security:
+            security = Security(
+                symbol=symbol,
+                name=name or symbol,
+                security_type=security_type
+            )
+            self.session.add(security)
+            await self.session.flush()  # Get the ID without committing
+        
+        return security
+
+    async def _get_pf_account_id(self, integration_id: int, external_account_id: str) -> Optional[int]:
+        """Get personal_finance Account ID from integration's connected account."""
+        # First get the connected account
+        result = await self.session.execute(
+            select(ConnectedAccount).where(
+                and_(
+                    ConnectedAccount.integration_id == integration_id,
+                    ConnectedAccount.external_account_id == external_account_id
+                )
+            )
+        )
+        connected_account = result.scalar_one_or_none()
+        
+        if not connected_account:
+            return None
+        
+        # Now find the corresponding personal_finance Account
+        pf_result = await self.session.execute(
+            select(PFAccount).where(PFAccount.external_account_id == external_account_id)
+        )
+        pf_account = pf_result.scalar_one_or_none()
+        
+        return pf_account.id if pf_account else None
+
+    async def sync_holdings(self, user_id: str, integration_id: int) -> Dict[str, Any]:
+        """Sync holdings from an integration to personal_finance models."""
+        
+        result = await self.session.execute(
+            select(UserIntegration).where(
+                and_(
+                    UserIntegration.id == integration_id,
+                    UserIntegration.user_id == user_id
+                )
+            )
+        )
+        integration = result.scalar_one_or_none()
+        
+        if not integration:
+            raise NotFoundError("Integration not found")
+        
+        if integration.integration_type != IntegrationType.SNAPTRADE:
+            raise ValidationError("Holdings sync is only supported for SnapTrade integrations")
+        
+        # Decrypt credentials
+        credentials = credential_encryption.decrypt_credentials(integration.encrypted_credentials)
+        
+        async with SnapTradeIntegration() as snaptrade:
+            try:
+                holdings_data = await snaptrade.get_holdings(credentials)
+                holdings_list = holdings_data.get('holdings', [])
+                
+                synced_holdings = []
+                
+                for holding in holdings_list:
+                    symbol = holding.get('symbol') or holding.get('ticker')
+                    if not symbol:
+                        continue
+                    
+                    # Get or create the security
+                    security = await self._get_or_create_security(
+                        symbol=symbol,
+                        name=holding.get('name'),
+                        security_type=holding.get('security_type', 'equity')
+                    )
+                    
+                    # Get the personal_finance account ID
+                    account_id = holding.get('account_id') or holding.get('accountId')
+                    pf_account_id = await self._get_pf_account_id(integration_id, str(account_id)) if account_id else None
+                    
+                    if not pf_account_id:
+                        # Skip if we can't map to a personal_finance account
+                        continue
+                    
+                    # Check if holding exists
+                    existing = await self.session.execute(
+                        select(Holding).where(
+                            and_(
+                                Holding.account_id == pf_account_id,
+                                Holding.security_id == security.id
+                            )
+                        )
+                    )
+                    pf_holding = existing.scalar_one_or_none()
+                    
+                    quantity = float(holding.get('quantity', 0) or holding.get('units', 0))
+                    market_value = float(holding.get('market_value', 0) or holding.get('marketValue', 0))
+                    cost_basis = float(holding.get('cost_basis', 0) or holding.get('averagePurchasePrice', 0) * quantity)
+                    
+                    if not pf_holding:
+                        pf_holding = Holding(
+                            account_id=pf_account_id,
+                            security_id=security.id,
+                            quantity=quantity,
+                            cost_basis=cost_basis,
+                            market_value=market_value,
+                            as_of_date=datetime.utcnow()
+                        )
+                        self.session.add(pf_holding)
+                    else:
+                        pf_holding.quantity = quantity
+                        pf_holding.cost_basis = cost_basis
+                        pf_holding.market_value = market_value
+                        pf_holding.as_of_date = datetime.utcnow()
+                    
+                    synced_holdings.append({
+                        'symbol': symbol,
+                        'quantity': quantity,
+                        'market_value': market_value
+                    })
+                
+                integration.last_sync_at = datetime.utcnow()
+                await self.session.commit()
+                
+                return {
+                    'synced_holdings': synced_holdings,
+                    'total': len(synced_holdings)
+                }
+                
+            except Exception as e:
+                integration.status = IntegrationStatus.ERROR
+                integration.last_error = str(e)
+                await self.session.commit()
+                raise ExternalServiceError(f"Failed to sync holdings: {str(e)}")
+
+    async def sync_transactions(
+        self, 
+        user_id: str, 
+        integration_id: int,
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None
+    ) -> Dict[str, Any]:
+        """Sync transactions from an integration to personal_finance models."""
+        
+        result = await self.session.execute(
+            select(UserIntegration).where(
+                and_(
+                    UserIntegration.id == integration_id,
+                    UserIntegration.user_id == user_id
+                )
+            )
+        )
+        integration = result.scalar_one_or_none()
+        
+        if not integration:
+            raise NotFoundError("Integration not found")
+        
+        if integration.integration_type != IntegrationType.SNAPTRADE:
+            raise ValidationError("Transaction sync is only supported for SnapTrade integrations")
+        
+        # Decrypt credentials
+        credentials = credential_encryption.decrypt_credentials(integration.encrypted_credentials)
+        
+        async with SnapTradeIntegration() as snaptrade:
+            try:
+                txn_data = await snaptrade.get_transactions(
+                    credentials,
+                    start_date=start_date,
+                    end_date=end_date
+                )
+                activities = txn_data.get('activities', [])
+                
+                synced_transactions = []
+                
+                for activity in activities:
+                    external_txn_id = activity.get('id') or activity.get('transactionId')
+                    
+                    # Check if transaction already exists
+                    existing = await self.session.execute(
+                        select(PFTransaction).where(
+                            PFTransaction.external_transaction_id == str(external_txn_id)
+                        )
+                    )
+                    if existing.scalar_one_or_none():
+                        continue  # Skip duplicates
+                    
+                    # Get the personal_finance account ID
+                    account_id = activity.get('account_id') or activity.get('accountId')
+                    pf_account_id = await self._get_pf_account_id(integration_id, str(account_id)) if account_id else None
+                    
+                    if not pf_account_id:
+                        continue
+                    
+                    # Get or create security if applicable
+                    symbol = activity.get('symbol') or activity.get('ticker')
+                    security_id = None
+                    if symbol:
+                        security = await self._get_or_create_security(symbol)
+                        security_id = security.id
+                    
+                    # Parse transaction date
+                    txn_date_str = activity.get('trade_date') or activity.get('settlement_date') or activity.get('date')
+                    if isinstance(txn_date_str, str):
+                        try:
+                            txn_date = datetime.fromisoformat(txn_date_str.replace('Z', '+00:00'))
+                        except ValueError:
+                            txn_date = datetime.utcnow()
+                    else:
+                        txn_date = txn_date_str or datetime.utcnow()
+                    
+                    pf_transaction = PFTransaction(
+                        account_id=pf_account_id,
+                        security_id=security_id,
+                        external_transaction_id=str(external_txn_id),
+                        transaction_type=activity.get('type', 'UNKNOWN'),
+                        quantity=float(activity.get('quantity', 0) or activity.get('units', 0) or 0),
+                        amount=float(activity.get('amount', 0) or activity.get('price', 0) or 0),
+                        price=float(activity.get('price', 0) or 0),
+                        fees=float(activity.get('fee', 0) or activity.get('commission', 0) or 0),
+                        transaction_date=txn_date,
+                        description=activity.get('description', ''),
+                        raw_data=activity
+                    )
+                    self.session.add(pf_transaction)
+                    
+                    synced_transactions.append({
+                        'external_id': external_txn_id,
+                        'type': activity.get('type'),
+                        'symbol': symbol,
+                        'amount': pf_transaction.amount
+                    })
+                
+                integration.last_sync_at = datetime.utcnow()
+                await self.session.commit()
+                
+                return {
+                    'synced_transactions': synced_transactions,
+                    'total': len(synced_transactions)
+                }
+                
+            except Exception as e:
+                integration.status = IntegrationStatus.ERROR
+                integration.last_error = str(e)
+                await self.session.commit()
+                raise ExternalServiceError(f"Failed to sync transactions: {str(e)}")
+
+    async def full_sync(self, user_id: str, integration_id: int) -> Dict[str, Any]:
+        """Perform a full sync: accounts, holdings, and transactions."""
+        accounts_result = await self.sync_accounts(user_id, integration_id)
+        holdings_result = await self.sync_holdings(user_id, integration_id)
+        transactions_result = await self.sync_transactions(user_id, integration_id)
+        
+        return {
+            'accounts': accounts_result,
+            'holdings': holdings_result,
+            'transactions': transactions_result
+        }

@@ -122,13 +122,24 @@ export default function Connections() {
     pendingInstitution,
     setPendingConnection
   } = usePlaid();
-  const { registerUser, getLoginLink, getAccounts: getSnapTradeAccounts, userSecret, setUserSecret, isLoading: snapTradeLoading } = useSnapTrade();
+  const { registerUser, getLoginLink, getAccounts: getSnapTradeAccounts, userSecret, setUserSecret, isLoading: snapTradeLoading, ensureIntegration, syncIntegration } = useSnapTrade();
 
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<string>("all");
   const [activeTab, setActiveTab] = useState("connected");
   const [connecting, setConnecting] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState<string | null>(null);
+
+  // Handle SnapTrade redirect in popup
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const status = params.get('status');
+    const isPopup = window.opener && window.opener !== window;
+
+    if (status && isPopup) {
+      window.close();
+    }
+  }, []);
 
   // Load SnapTrade user secret from profile if exists
   useEffect(() => {
@@ -241,6 +252,7 @@ export default function Connections() {
   }, [linkToken, pendingInstitution, plaidLinkReady, openPlaidLink]);
 
   // Connect via SnapTrade
+  // Connect via SnapTrade
   const connectSnapTrade = useCallback(async (institution: Institution) => {
     if (!user) return;
 
@@ -268,75 +280,48 @@ export default function Connections() {
         duration: 10000,
       });
 
-      // Poll for new accounts when popup closes
-      const checkForNewAccounts = setInterval(async () => {
+      // Poll for popup closure
+      const checkPopup = setInterval(async () => {
         if (popup?.closed) {
-          clearInterval(checkForNewAccounts);
+          clearInterval(checkPopup);
 
-          // Give SnapTrade a moment to sync
-          await new Promise(resolve => setTimeout(resolve, 1500));
+          toast.info('Syncing your accounts...');
 
-          // Check if account was added
-          const snapAccounts = await getSnapTradeAccounts(secret);
-          if (snapAccounts && snapAccounts.length > 0) {
-            let newAccountsCount = 0;
+          try {
+            // Ensure integration record exists
+            const integrationId = await ensureIntegration(secret || undefined);
+            if (!integrationId) throw new Error('Failed to create integration record');
 
-            // Save new accounts to database
-            for (const acc of snapAccounts) {
-              const existing = accounts.find(a => {
-                const meta = a.metadata as { snaptrade_account_id?: string } | null;
-                return meta?.snaptrade_account_id === acc.id;
-              });
+            // Trigger deep sync
+            await syncIntegration(integrationId);
 
-              if (!existing) {
-                newAccountsCount++;
-                await api.post('/connected-accounts', {
-                  institution_name: acc.institution_name || institution.name,
-                  institution_type: institution.type,
-                  account_name: acc.name || `${institution.name} Account`,
-                  account_number_masked: acc.number || null,
-                  balance: acc.balance?.total?.amount || 0,
-                  currency: acc.balance?.total?.currency || 'USD',
-                  is_connected: true,
-                  connection_status: 'active',
-                  last_synced_at: new Date().toISOString(),
-                  metadata: {
-                    provider: 'snaptrade',
-                    institution_id: institution.id,
-                    snaptrade_account_id: acc.id,
-                    snaptrade_authorization_id: acc.brokerage_authorization,
-                  }
-                });
-              }
-            }
-
-            if (newAccountsCount > 0) {
-              toast.success(`Connected ${newAccountsCount} account(s) from ${institution.name}!`);
-              fetchAccounts();
-              setActiveTab('connected');
-            } else {
-              toast.info('No new accounts detected. You may have cancelled the connection.');
-            }
+            toast.success('Accounts synced successfully!');
+            fetchAccounts();
+            setActiveTab('connected');
+          } catch (error: any) {
+            console.error('Sync error:', error);
+            toast.error('Connection successful but sync failed. Please try syncing again.');
+          } finally {
+            setDialogOpen(null);
+            setConnecting(null);
           }
-          setDialogOpen(null);
-          setConnecting(null);
         }
-      }, 1500);
+      }, 1000);
 
-      // Clear interval after 5 minutes
+      // Timeout after 5 minutes
       setTimeout(() => {
-        clearInterval(checkForNewAccounts);
+        clearInterval(checkPopup);
         if (connecting === institution.id) {
           setConnecting(null);
-          toast.info('Connection timed out. Please try again.');
         }
       }, 300000);
+
     } catch (error: any) {
       console.error('SnapTrade connection error:', error);
       toast.error(`Failed to connect: ${error.message}`);
       setConnecting(null);
     }
-  }, [user, userSecret, registerUser, getLoginLink, getSnapTradeAccounts, accounts, fetchAccounts, connecting]);
+  }, [user, userSecret, registerUser, getLoginLink, getSnapTradeAccounts, accounts, fetchAccounts, connecting, ensureIntegration, syncIntegration]);
 
   const handleConnect = async (institutionId: string) => {
     const institution = institutions.find(i => i.id === institutionId);
